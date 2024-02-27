@@ -84,7 +84,8 @@ def save_plot(filepath: str, **kwargs) -> None:
 
 def add_value_labels(ax: plt.Axes, 
                      color: str,
-                     percentage: int = 5) -> None:
+                     percentage: int = 5,
+                     frequency: bool = True) -> None:
     """
     Add value labels to the bars in a bar plot.
 
@@ -96,6 +97,12 @@ def add_value_labels(ax: plt.Axes,
     color (str):
         The color of the value labels.
 
+    percentage (int, optional):
+        The percentage of the bar height at which to place the value labels. Defaults to 5.
+    
+    frequency (bool, optional):
+        If True, the value labels will be displayed as frequencies. Defaults to True.
+
     Returns:
     --------
     None
@@ -105,7 +112,7 @@ def add_value_labels(ax: plt.Axes,
     dx_text_height = sum([p[2] for p in patch_data]) / len(patch_data) * percentage / 100
 
     for x, width, height in patch_data:
-        ax.annotate(f'{height:.2f}%',
+        ax.annotate(f'{height:.2f}%' if frequency else f'{height:.0f}',
                     (x + width / 2., height-dx_text_height), 
                     ha='center', va='center', fontsize=8, fontweight='bold', 
                     color=color, xytext=(0, 5), textcoords='offset points')
@@ -230,7 +237,6 @@ def plot_groupby(dataframe: pd.DataFrame,
     color_spine = kwargs.pop('color_spine', adjust_color(kwargs['color'], 0.45))
     color_tick  = kwargs.pop('color_tick', adjust_color(kwargs['color'], 0.45))
     color_grid  = kwargs.pop('color_grid', adjust_color(kwargs['color'], -0.4))
-    percentage  = kwargs.pop('percentage', 10)
 
 
     plt.figure(figsize=figsize)
@@ -247,7 +253,7 @@ def plot_groupby(dataframe: pd.DataFrame,
     rotation, ha = rotation if isinstance(rotation, tuple) else (rotation, 'center')
     plt.xticks(rotation=rotation, ha=ha)
 
-    add_value_labels(ax, adjust_color(kwargs['color'], 0.4), percentage=percentage)
+    add_value_labels(ax, adjust_color(kwargs['color'], 0.4), 10)
 
     customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
                           color_spine=color_spine, color_tick=color_tick)
@@ -400,6 +406,7 @@ def plot_distribution(dataframe: pd.DataFrame,
     color_grid  = kwargs.pop('color_grid', adjust_color(kwargs['color'], -0.4))
 
     plt.figure(figsize=figsize)
+
     if frequency:
         ax = sns.histplot(dataframe[column], stat='percent', **kwargs)
         plt.ylabel('Frequency', color=color_label, fontsize=11)
@@ -416,6 +423,103 @@ def plot_distribution(dataframe: pd.DataFrame,
     if num_tick < max_xticks:
         ax.set_xticks(bin_edges)
         ax.set_xticklabels([f'{tick:.0f}' for tick in bin_edges])
+
+    plt.title(f'Distribution of {column.capitalize()}', fontweight='bold')
+    plt.xlabel(column.capitalize(), color=color_label, fontsize=11)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+
+    if filepath:
+        save_plot(filepath)
+
+    plt.show()
+
+
+def plot_hist_discrete_feature(dataframe: pd.DataFrame, 
+                               column: str,
+                               filepath: str = None,
+                               frequency: bool = False,
+                               **kwargs) -> None:
+    """
+    Plot a histogram for a specified column in a DataFrame with customizable options.
+
+    Parameters:
+    -----------
+    df (pd.DataFrame):
+        The DataFrame containing the data.
+
+    column (str):
+        The name of the column to plot.
+
+    filepath (str, optional):
+        The file path to save the plot as an image. If provided, the figure will be saved as a PNG file.
+        Defaults to None.
+
+    frequency (bool, optional):
+        If True, plot frequencies instead of counts. Defaults to False.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., alpha, edgecolor, bins, color, etc.).
+
+    Returns:
+    --------
+    None
+
+    This function plots a histogram for the specified column in the DataFrame. It provides options
+    to customize the appearance of the plot, such as figure figsize, colors, and transparency. If a file
+    path is provided, the plot will be saved as an image in PNG format.
+    """
+
+    labels, counts = np.unique(dataframe[column], return_counts=True)
+    percentages = counts / len(dataframe) * 100
+    
+    df_counts = pd.DataFrame({'Labels': labels, 
+                              'Counts': counts,
+                              'Percentages': percentages})
+
+    df_counts.sort_values(by='Counts', ascending=False, inplace=True)
+
+    print(df_counts)
+
+    graphcolor = kwargs.pop('graph_color', '#000000')
+
+    kwargs['color']      = kwargs.get('color', [COLORS['BLUE']] *  len(labels))
+    kwargs['edgecolor']   = kwargs.get('edgecolor', adjust_color(graphcolor, 0.5))
+
+    if len(kwargs['color']) != len(labels):
+        print(f"Warning: Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({len(labels)}). Adding default colors.")
+        kwargs['color'] += [COLORS['BLUE']] * (len(labels) - len(kwargs['color']))
+
+    figsize     = kwargs.pop('figsize', (10, 6))
+    axgridx     = kwargs.pop('axgridx', False)
+    axgridy     = kwargs.pop('axgridy', True)
+    color_label = kwargs.pop('color_label', adjust_color(graphcolor, 0.3))
+    color_spine = kwargs.pop('color_spine', adjust_color(graphcolor, 0.45))
+    color_tick  = kwargs.pop('color_tick', adjust_color(graphcolor, 0.45))
+    color_grid  = kwargs.pop('color_grid', adjust_color(graphcolor, -0.4))
+
+    plt.figure(figsize=figsize)
+
+    if frequency:
+        ax = sns.barplot(y='Percentages', 
+                        x='Labels', 
+                        data=df_counts, 
+                        palette=kwargs.pop('color'),
+                        **kwargs)
+        plt.ylabel('Frequency', color=color_label, fontsize=11)
+        ticks = ax.get_yticks()
+        ax.yaxis.set_major_locator(FixedLocator(ticks))
+        ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
+    else:
+        ax = sns.barplot(y='Counts', 
+                         x='Labels', 
+                         data=df_counts, 
+                         palette=kwargs.pop('color'),
+                         **kwargs)
+        plt.ylabel('Number', color=color_label, fontsize=11)
+
+    add_value_labels(ax, '#000000', frequency=frequency, percentage=8)
 
     plt.title(f'Distribution of {column.capitalize()}', fontweight='bold')
     plt.xlabel(column.capitalize(), color=color_label, fontsize=11)
