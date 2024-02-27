@@ -5,7 +5,7 @@ import seaborn as sns
 
 from matplotlib.ticker import FixedLocator
 
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict
 
 COLORS = {'BLUE': '#3D6FFF',
           'RED': '#FF3D3D',
@@ -480,8 +480,6 @@ def plot_hist_discrete_feature(dataframe: pd.DataFrame,
 
     df_counts.sort_values(by='Counts', ascending=False, inplace=True)
 
-    print(df_counts)
-
     graphcolor = kwargs.pop('graph_color', '#000000')
 
     kwargs['color']      = kwargs.get('color', [COLORS['BLUE']] *  len(labels))
@@ -531,3 +529,85 @@ def plot_hist_discrete_feature(dataframe: pd.DataFrame,
         save_plot(filepath)
 
     plt.show()
+
+def plot_feature_importance(features: pd.Index,
+                            importances: np.ndarray, 
+                            filepath: str = None,
+                            **kwargs) -> Dict[str, float]:
+    """
+    Plot feature importances.
+
+    Parameters:
+    -----------
+    features (pd.Index):
+        The features (columns) corresponding to the importances.
+    
+    importances (np.ndarray):
+        Feature importances obtained from a Random Forest classifier.
+
+    filepath (str, optional):
+        The file path to save the plot as an image. If provided, the figure will be saved as a PNG file.
+        Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    Dict[str, float]:
+        A dictionary containing features and their corresponding importances.
+
+    This function plots the feature importances.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+    """
+    
+    df_importance = pd.DataFrame({'Features': features, 
+                                  'Importances': importances})
+    
+    df_importance.sort_values(by='Importances', ascending=False, inplace=True)
+    
+    kwargs['color']     = kwargs.get('color', COLORS['BLUE'])
+    kwargs['edgecolor'] = kwargs.get('edgecolor', adjust_color(kwargs['color'], 0.5))
+
+    figsize     = kwargs.pop('figsize', (10, 6))
+    axgridx     = kwargs.pop('axgridx', True)
+    axgridy     = kwargs.pop('axgridy', False)
+    color_label = kwargs.pop('color_label', adjust_color(kwargs['color'] , 0.3))
+    color_spine = kwargs.pop('color_spine', adjust_color(kwargs['color'] , 0.45))
+    color_tick  = kwargs.pop('color_tick', adjust_color(kwargs['color'] , 0.45))
+    color_grid  = kwargs.pop('color_grid', adjust_color(kwargs['color'] , -0.4))
+    bold_max    = kwargs.pop('bold_max', True)
+    italic_min  = kwargs.pop('italic_min', True)
+    to_dict     = kwargs.pop('to_dict', False)
+
+    fig = plt.figure(figsize=figsize)
+
+    ax = sns.barplot(y='Features', 
+                     x='Importances', 
+                     data=df_importance, 
+                     **kwargs)
+    
+    plt.title(f'Features importances', fontweight='bold')
+    plt.xlabel('Importances', color=color_label, fontsize=11)
+    plt.ylabel('Features', color=color_label, fontsize=11)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+    
+    if bold_max:
+        max_index = np.argmax(df_importance['Importances'])
+        y_labels = fig.gca().get_yticklabels()
+        y_labels[max_index].set_weight('bold')
+
+    if italic_min:
+        min_index = np.argmin(df_importance['Importances'])
+        y_labels = fig.gca().get_yticklabels()
+        y_labels[min_index].set_style('italic')
+
+
+    if filepath:
+        save_plot(filepath)
+
+    plt.show()
+
+    return df_importance.transpose().to_dict() if to_dict else df_importance.transpose()
