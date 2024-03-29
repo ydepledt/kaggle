@@ -148,6 +148,47 @@ def save_plot(filepath: str, **kwargs) -> None:
     plt.savefig(filepath, bbox_inches="tight", **kwargs)
 
 
+def get_colors(labels, 
+               kwargs, 
+               base_color=COLORS['BLUE']):
+    
+    if 'color' not in kwargs:
+        kwargs['color'] = [base_color] * len(labels)
+    elif kwargs['color'] == 'random':
+        kwargs['color'] = get_random_colors_from_dict(len(labels))
+    elif kwargs['color'] == 'random2':
+        kwargs['color'] = get_random_colors(len(labels))
+    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != len(labels):
+        warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({len(labels)}). Adding default colors.")
+        kwargs['color'] += get_random_colors_from_dict(len(labels) - len(kwargs['color']))
+    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == len(labels):
+        pass
+    elif isinstance(kwargs['color'], str) and kwargs['color'].startswith('#'):
+        kwargs['color'] = [kwargs['color']] * len(labels)
+    else:
+        try:
+            kwargs['color'] = sns.color_palette(kwargs['color'], len(labels))
+        except ValueError:
+            kwargs['color'] = [base_color] * len(labels)
+            warnings.warn("No color provided. Default color 'blue' will be used for all bars.")
+
+    
+
+
+def get_edgecolors(edgefactor: float,
+                   kwargs: Dict[str, Any]) -> Tuple[str, str]:
+        
+        colors = kwargs['color']
+        nb_colors = len(colors)
+
+        if 'edgecolor' in kwargs:
+            edgecolor = kwargs['edgecolor']
+            if not (isinstance(edgecolor, tuple) and len(edgecolor) == nb_colors):
+                kwargs['edgecolor'] = [edgecolor] * nb_colors
+        else:
+            kwargs['edgecolor'] = [adjust_color(color, edgefactor) for color in colors]
+
+
 def customize_plot_colors(ax: plt.Axes, 
                           axgridx: bool = False,
                           axgridy: bool = False,
@@ -388,26 +429,9 @@ def plot_hist_discrete_feature(ax: plt.Axes,
 
     graphcolor = kwargs.pop('graph_color', '#000000')
 
-    kwargs['edgecolor'] = kwargs.get('edgecolor', adjust_color(graphcolor, 0.5))
-
-    if 'color' not in kwargs:
-        kwargs['color'] = [COLORS['BLUE']] * len(labels)
-    elif kwargs['color'] == 'random':
-        kwargs['color'] = get_random_colors_from_dict(len(labels))
-    elif kwargs['color'] == 'random2':
-        kwargs['color'] = get_random_colors(len(labels))
-    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != len(labels):
-        warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({len(labels)}). Adding default colors.")
-        kwargs['color'] += get_random_colors_from_dict(len(labels) - len(kwargs['color']))
-    elif isinstance(kwargs['color'], str) and kwargs['color'].startswith('#'):
-        kwargs['color'] = [kwargs['color']] * len(labels)
-    else:
-        try:
-            n_colors = len(labels)
-            kwargs['color'] = sns.color_palette(kwargs['color'], n_colors)
-        except ValueError:
-            kwargs['color'] = [COLORS['BLUE']] * len(labels)
-            warnings.warn("No color provided. Default color 'blue' will be used for all bars.")
+    get_colors(labels, kwargs)
+    get_edgecolors(0.5, kwargs)
+    edecolors = kwargs.pop('edgecolor')
 
     axgridx          = kwargs.pop('axgridx', False)
     axgridy          = kwargs.pop('axgridy', True)
@@ -420,6 +444,8 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     title_before     = kwargs.pop('title_before', '')
     title_addition   = kwargs.pop('title_addition', '')
     filepath         = kwargs.pop('filepath', None)
+
+    kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
 
     if frequency:
         sns.barplot(y='Percentages', 
@@ -443,6 +469,9 @@ def plot_hist_discrete_feature(ax: plt.Axes,
                          **kwargs)
         plt.ylabel('Number', color=color_label, fontsize=11)
 
+    for i, patch in enumerate(ax.patches):
+        patch.set_edgecolor(edecolors[i])
+
     add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_label)
 
     plt.title(title_before + title + title_addition, fontweight='bold')
@@ -455,3 +484,69 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         save_plot(filepath)
 
     return df_counts
+
+
+def plot_groupby(ax: plt.Axes,
+                 dataframe: pd.DataFrame, 
+                 group: str,
+                 target: str,
+                 **kwargs) -> pd.DataFrame:
+    
+    result = dataframe.groupby([group, target]).size().unstack()
+
+    # kwargs['color'] = kwargs.get('color', COLORS['BLUE'])
+
+    # rotation    = kwargs.pop('rotation', 45)
+    # axgridx     = kwargs.pop('axgridx', False)
+    # axgridy     = kwargs.pop('axgridy', True)
+    # color_label = kwargs.pop('color_label', adjust_color(kwargs['color'], 0.3))
+    # color_spine = kwargs.pop('color_spine', adjust_color(kwargs['color'], 0.45))
+    # color_tick  = kwargs.pop('color_tick', adjust_color(kwargs['color'], 0.45))
+    # color_grid  = kwargs.pop('color_grid', adjust_color(kwargs['color'], -0.4))
+    # filepath    = kwargs.pop('filepath', None)
+
+
+    # sns.barplot(data=result, x=result.index, y='Total', **kwargs)
+    # plt.title(f'{target.capitalize()} Percentage by {group.capitalize()} Category', fontweight= 'bold')
+    # plt.ylabel(f'{target.capitalize()} Percentage', color=color_label, fontsize=11)
+    # plt.xlabel(f'{group.capitalize()} Category', color=color_label, fontsize=11)
+
+    # plt.xticks(rotation=rotation)
+
+    # for p in ax.patches:
+    #     ax.annotate(f'{p.get_height():.0f}%', (p.get_x() + p.get_width() / 2., p.get_height()-5),
+    #                 ha='center', va='center', fontsize=8, fontweight='bold', 
+    #                 color=adjust_color(kwargs['color'], 0.4), xytext=(0, 5),
+    #                 textcoords='offset points')
+
+    # customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+    #                       color_spine=color_spine, color_tick=color_tick)
+
+    # if filepath:
+    #     save_plot(filepath)
+    
+    result = result.reset_index().rename(columns={'index': group})
+    # result = pd.melt(result, id_vars=[group, target], var_name='Weight_Category', value_name='Population')
+    result = pd.melt(result, id_vars=group, var_name=target, value_name='Population')
+
+    # plt.figure(figsize=(12, 6))
+    # sns.barplot(data=result, x='NObeyesdad', y='Population', hue='CAEC')
+    # plt.xticks(rotation=45, ha='right')
+    # plt.xlabel('Weight Categories')
+    # plt.ylabel('Population')
+    # plt.title('Population Distribution by Weight Categories and CAEC')
+    # plt.legend(title='CAEC')
+    # plt.tight_layout()
+    # plt.show()
+
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=result, x=group, y='Population', hue=target, dodge=False, palette='viridis', saturation=0.75)
+    plt.xticks(rotation=45, ha='right')
+    plt.xlabel(f'{group.capitalize()} Category')
+    plt.ylabel('Population')
+    plt.title(f'Population Distribution by {group} and {target}')
+    plt.legend(title=target)
+    plt.tight_layout()
+    plt.show()
+
+    return result
