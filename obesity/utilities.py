@@ -148,28 +148,28 @@ def save_plot(filepath: str, **kwargs) -> None:
     plt.savefig(filepath, bbox_inches="tight", **kwargs)
 
 
-def get_colors(labels, 
-               kwargs, 
-               base_color=COLORS['BLUE']):
+def get_colors(size: int, 
+               kwargs: Dict[str, Any],
+               base_color: str = COLORS['BLUE']) -> None:
     
     if 'color' not in kwargs:
-        kwargs['color'] = [base_color] * len(labels)
+        kwargs['color'] = [base_color] * size
     elif kwargs['color'] == 'random':
-        kwargs['color'] = get_random_colors_from_dict(len(labels))
+        kwargs['color'] = get_random_colors_from_dict(size)
     elif kwargs['color'] == 'random2':
-        kwargs['color'] = get_random_colors(len(labels))
-    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != len(labels):
-        warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({len(labels)}). Adding default colors.")
-        kwargs['color'] += get_random_colors_from_dict(len(labels) - len(kwargs['color']))
-    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == len(labels):
+        kwargs['color'] = get_random_colors(size)
+    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != size:
+        warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({size}). Adding default colors.")
+        kwargs['color'] += get_random_colors_from_dict(size - len(kwargs['color']))
+    elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == size:
         pass
     elif isinstance(kwargs['color'], str) and kwargs['color'].startswith('#'):
-        kwargs['color'] = [kwargs['color']] * len(labels)
+        kwargs['color'] = [kwargs['color']] * size
     else:
         try:
-            kwargs['color'] = sns.color_palette(kwargs['color'], len(labels))
+            kwargs['color'] = sns.color_palette(kwargs['color'], size)
         except ValueError:
-            kwargs['color'] = [base_color] * len(labels)
+            kwargs['color'] = [base_color] * size
             warnings.warn("No color provided. Default color 'blue' will be used for all bars.")
 
     
@@ -429,7 +429,7 @@ def plot_hist_discrete_feature(ax: plt.Axes,
 
     graphcolor = kwargs.pop('graph_color', '#000000')
 
-    get_colors(labels, kwargs)
+    get_colors(len(labels), kwargs)
     get_edgecolors(0.5, kwargs)
     edecolors = kwargs.pop('edgecolor')
 
@@ -490,63 +490,129 @@ def plot_groupby(ax: plt.Axes,
                  dataframe: pd.DataFrame, 
                  group: str,
                  target: str,
+                 frequency: bool = False,
                  **kwargs) -> pd.DataFrame:
     
-    result = dataframe.groupby([group, target]).size().unstack()
+    """
+    Plot the distribution of a group and target column in a DataFrame.
 
-    # kwargs['color'] = kwargs.get('color', COLORS['BLUE'])
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The Axes object to plot the data.
 
-    # rotation    = kwargs.pop('rotation', 45)
-    # axgridx     = kwargs.pop('axgridx', False)
-    # axgridy     = kwargs.pop('axgridy', True)
-    # color_label = kwargs.pop('color_label', adjust_color(kwargs['color'], 0.3))
-    # color_spine = kwargs.pop('color_spine', adjust_color(kwargs['color'], 0.45))
-    # color_tick  = kwargs.pop('color_tick', adjust_color(kwargs['color'], 0.45))
-    # color_grid  = kwargs.pop('color_grid', adjust_color(kwargs['color'], -0.4))
-    # filepath    = kwargs.pop('filepath', None)
+    dataframe (pd.DataFrame):
+        The DataFrame containing the data.
 
+    group (str):
+        The name of the column to group by.
 
-    # sns.barplot(data=result, x=result.index, y='Total', **kwargs)
-    # plt.title(f'{target.capitalize()} Percentage by {group.capitalize()} Category', fontweight= 'bold')
-    # plt.ylabel(f'{target.capitalize()} Percentage', color=color_label, fontsize=11)
-    # plt.xlabel(f'{group.capitalize()} Category', color=color_label, fontsize=11)
+    target (str):
+        The name of the target column.
 
-    # plt.xticks(rotation=rotation)
+    frequency (bool, optional):
+        If True, get the frequency distribution. If False (default), get the population distribution.
 
-    # for p in ax.patches:
-    #     ax.annotate(f'{p.get_height():.0f}%', (p.get_x() + p.get_width() / 2., p.get_height()-5),
-    #                 ha='center', va='center', fontsize=8, fontweight='bold', 
-    #                 color=adjust_color(kwargs['color'], 0.4), xytext=(0, 5),
-    #                 textcoords='offset points')
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, edgecolor, linewidth, etc.).
 
-    # customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-    #                       color_spine=color_spine, color_tick=color_tick)
+    Returns:
+    --------
+    pd.DataFrame:
+        A DataFrame containing the distribution of the group and target columns.
 
-    # if filepath:
-    #     save_plot(filepath)
+    This function plots the distribution of a group and target column in a DataFrame. It provides options to customize
+    the appearance of the plot, such as colors, edge color, and line width.
     
+    Examples:
+    ---------
+    >>> plot_groupby(ax, df, 'category', 'target', frequency=True, color='viridis', edgecolor='black', linewidth=1.5)
+    >>> plot_groupby(ax, df, 'category', 'target', frequency=False, color=['red', 'cyan', 'orange'], edgecolor='auto', linewidth=1.5, title_before='Train ')
+
+    """
+    
+    result = dataframe.groupby([group, target]).size().unstack()
     result = result.reset_index().rename(columns={'index': group})
-    # result = pd.melt(result, id_vars=[group, target], var_name='Weight_Category', value_name='Population')
-    result = pd.melt(result, id_vars=group, var_name=target, value_name='Population')
 
-    # plt.figure(figsize=(12, 6))
-    # sns.barplot(data=result, x='NObeyesdad', y='Population', hue='CAEC')
-    # plt.xticks(rotation=45, ha='right')
-    # plt.xlabel('Weight Categories')
-    # plt.ylabel('Population')
-    # plt.title('Population Distribution by Weight Categories and CAEC')
-    # plt.legend(title='CAEC')
-    # plt.tight_layout()
-    # plt.show()
+    columns_to_sum = [col for col in result.columns if col not in [group, target]]
+    df = result.copy()
 
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=result, x=group, y='Population', hue=target, dodge=False, palette='viridis', saturation=0.75)
-    plt.xticks(rotation=45, ha='right')
-    plt.xlabel(f'{group.capitalize()} Category')
+    df['Total'] = df[columns_to_sum].sum(axis=1)
+
+    if frequency:
+        for i in range(df.shape[0]):
+            for col in columns_to_sum:
+                percentage = df.loc[i, col] / df.loc[i, 'Total'] * 100
+                df.loc[i, col] = percentage
+
+    style = True if kwargs.pop('style', 'bar').lower() == 'multibar' else False
+
+    if style:
+        result = pd.melt(result, id_vars=group, var_name=target, value_name='Population')
+
+    graphcolor = kwargs.pop('graph_color', '#000000')
+
+    if 'color' not in kwargs:
+        kwargs['color'] = 'inferno'
+    get_colors(len(df.columns) - 2, kwargs)
+    edgecolor_chosen = kwargs.pop('edgecolor', 'auto')
+
+    axgridx           = kwargs.pop('axgridx', False)
+    axgridy           = kwargs.pop('axgridy', True)
+    color_label       = kwargs.pop('color_label', adjust_color(graphcolor, 0.3))
+    color_spine       = kwargs.pop('color_spine', adjust_color(graphcolor, 0.45))
+    color_tick        = kwargs.pop('color_tick', adjust_color(graphcolor, 0.45))
+    color_grid        = kwargs.pop('color_grid', adjust_color(graphcolor, -0.4))
+    legend_facecolor  = kwargs.pop('legend_facecolor', 'white')
+    legend_edgecolor  = kwargs.pop('legend_edgecolor', 'grey')
+    legend_framealpha = kwargs.pop('legend_framealpha', 0.5)
+    percentage_label  = kwargs.pop('percentage_label', 18)
+    title             = kwargs.pop('title', f'Distribution of {group.capitalize()} and {target.capitalize()}')
+    title_before      = kwargs.pop('title_before', '')
+    title_addition    = kwargs.pop('title_addition', '')
+    filepath          = kwargs.pop('filepath', None)
+
+    kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
+    kwargs['alpha'] = kwargs.get('alpha', 0.9)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+
+
+    if style:
+        sns.barplot(data=result, x=group, 
+                    y='Population', palette=kwargs.pop('color'), 
+                    hue=target, dodge=True, saturation=0.75, **kwargs)
+
+        for i, patch in enumerate(ax.patches):
+            edgecolor = edgecolor_chosen if edgecolor_chosen != 'auto' else adjust_color(patch.get_facecolor(), 0.5)
+            patch.set_edgecolor(edgecolor)
+
+        add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_label)
+        
+
+    else:
+        col = kwargs.pop('color')
+        for _, row in df.iterrows():
+            bottom = 0
+            for i, category in enumerate(df.columns[1:-1]):
+                plt.bar(row[group], row[category], bottom=bottom, label=category, color=col[i], **kwargs)
+                bottom += row[category]
+
+        plt.ylim(0, max(df['Total']) * 1.06)
+
+        
+
+    plt.title(title_before + title + title_addition, fontweight='bold')
+    plt.xlabel(group.capitalize(), color=color_label, fontsize=11)
     plt.ylabel('Population')
-    plt.title(f'Population Distribution by {group} and {target}')
-    plt.legend(title=target)
-    plt.tight_layout()
-    plt.show()
 
-    return result
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha, title=target)
+    plt.tight_layout()
+
+    if filepath:
+        save_plot(filepath)
+
+    return df
