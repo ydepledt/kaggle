@@ -1,14 +1,10 @@
 import warnings
 
-from matplotlib.lines import Line2D
-import torch
+import webcolors
 import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import PCA
-from matplotlib.animation import FuncAnimation
 from matplotlib.ticker import FixedLocator
 import matplotlib.colors as mcolors
 
@@ -163,14 +159,16 @@ def get_colors(size: int,
         kwargs['color'] += get_random_colors_from_dict(size - len(kwargs['color']))
     elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == size:
         pass
-    elif isinstance(kwargs['color'], str) and kwargs['color'].startswith('#'):
-        kwargs['color'] = [kwargs['color']] * size
     else:
         try:
             kwargs['color'] = sns.color_palette(kwargs['color'], size)
         except ValueError:
-            kwargs['color'] = [base_color] * size
-            warnings.warn("No color provided. Default color 'blue' will be used for all bars.")
+            try:
+                color_hex = webcolors.name_to_hex(kwargs['color'])
+                kwargs['color'] = [color_hex] * size
+            except ValueError:
+                warnings.warn(f"Color '{kwargs['color']}' is not a valid color name or hex code. Using default color.")
+                kwargs['color'] = [base_color] * size
 
     
 
@@ -616,3 +614,173 @@ def plot_groupby(ax: plt.Axes,
         save_plot(filepath)
 
     return df
+
+def plot_boxplot(ax: plt.Axes,
+                 dataframe: pd.DataFrame, 
+                 x: str, 
+                 y: str, 
+                 **kwargs) -> None:
+    """
+    Plot a boxplot for a specified x and y column in a DataFrame.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The Axes object to plot the data.
+
+    dataframe (pd.DataFrame):
+        The DataFrame containing the data.
+
+    x (str):
+        The name of the x-axis column.
+
+    y (str):
+        The name of the y-axis column.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, edgecolor, linewidth, etc.).
+
+    Returns:
+    --------
+    None
+
+    This function plots a boxplot for the specified x and y columns in the DataFrame. It provides options to customize
+    the appearance of the plot, such as colors, edge color, and line width.
+    """
+
+    NB_BOX = len(dataframe[x].unique())
+    print(NB_BOX)
+
+    graphcolor = kwargs.pop('graph_color', '#000000')
+
+    if 'color' not in kwargs:
+        kwargs['color'] = 'inferno'
+    get_colors(len(dataframe[x].unique()), kwargs)
+
+    default_median_style = dict(linewidth=1.5, color='auto')
+    default_outlier_style = dict(marker='o')
+
+
+    axgridx           = kwargs.pop('axgridx', False)
+    axgridy           = kwargs.pop('axgridy', True)
+    color_label       = kwargs.pop('color_label', adjust_color(graphcolor, 0.3))
+    color_spine       = kwargs.pop('color_spine', adjust_color(graphcolor, 0.45))
+    color_tick        = kwargs.pop('color_tick', adjust_color(graphcolor, 0.45))
+    color_grid        = kwargs.pop('color_grid', adjust_color(graphcolor, -0.4))
+    title             = kwargs.pop('title', f'Boxplot of {x.capitalize()} and {y.capitalize()}')
+    title_before      = kwargs.pop('title_before', '')
+    title_addition    = kwargs.pop('title_addition', '')
+    filepath          = kwargs.pop('filepath', None)
+    outlier_style     = {**default_outlier_style, **kwargs.pop('outlier_style', {})}
+
+    if default_median_style['color'] != 'auto':
+        median_style = {**default_median_style, **kwargs.pop('median_style', {})}  
+    else:
+        median_color = default_median_style.pop('color')
+        median_style = {**default_median_style, **kwargs.pop('median_style', {})}
+
+
+    alpha = kwargs.pop('alpha', 0.8)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+
+    sns.boxplot(x=x, y=y, data=dataframe, palette=kwargs.pop('color'), 
+                hue=x, medianprops=median_style, flierprops=outlier_style, **kwargs)
+    
+    for patch in ax.patches:
+        r, g, b, _ = patch.get_facecolor()
+        patch.set_facecolor((r, g, b, alpha))
+    
+    if median_color == 'auto':
+        for i, line in enumerate(ax.lines):
+            if median_color == 'auto' and i % 6 == 4 and i != 0:
+                line.set_color(adjust_color(ax.patches[i//6].get_facecolor(), -0.2))
+
+    plt.title(title_before + title + title_addition, fontweight='bold')
+    plt.xlabel(x.capitalize(), color=color_label, fontsize=11)
+    plt.ylabel(y.capitalize(), color=color_label, fontsize=11)
+
+    if filepath:
+        save_plot(filepath)
+
+
+def plot_feature_importance(ax: plt.Axes,
+                            features: pd.Index,
+                            importances: np.ndarray, 
+                            **kwargs) -> Dict[str, float]:
+    """
+    Plot feature importances.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    features (pd.Index):
+        The features (columns) corresponding to the importances.
+    
+    importances (np.ndarray):
+        Feature importances obtained from a Random Forest classifier.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    Dict[str, float]:
+        A dictionary containing features and their corresponding importances.
+
+    This function plots the feature importances.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+    """
+    
+    df_importance = pd.DataFrame({'Features': features, 
+                                  'Importances': importances})
+        
+    df_importance.sort_values(by='Importances', ascending=False, inplace=True)
+    
+    get_colors(len(df_importance), kwargs)
+    get_edgecolors(0.5, kwargs)
+
+    color = kwargs['color'] if isinstance(kwargs['color'], str) else kwargs['color'][0]
+
+    axgridx     = kwargs.pop('axgridx', True)
+    axgridy     = kwargs.pop('axgridy', False)
+    color_label = kwargs.pop('color_label', adjust_color(color , 0.3))
+    color_spine = kwargs.pop('color_spine', adjust_color(color , 0.45))
+    color_tick  = kwargs.pop('color_tick', adjust_color(color, 0.45))
+    color_grid  = kwargs.pop('color_grid', adjust_color(color, -0.4))
+    bold_max    = kwargs.pop('bold_max', True)
+    italic_min  = kwargs.pop('italic_min', True)
+    to_dict     = kwargs.pop('to_dict', False)
+    filepath    = kwargs.pop('filepath', None)
+
+    sns.barplot(y='Features', x='Importances', 
+                data=df_importance, palette=kwargs.pop('color'), 
+                hue='Importances', legend=False, **kwargs)
+    
+    plt.title(f'Features importances', fontweight='bold')
+    plt.xlabel('Importances', color=color_label, fontweight='bold')
+    plt.ylabel('Features', color=color_label, fontweight='bold')
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+    
+    if bold_max:
+        max_index = np.argmax(df_importance['Importances'])
+        y_labels = ax.get_yticklabels()
+        y_labels[max_index].set_weight('bold')
+
+    if italic_min:
+        min_index = np.argmin(df_importance['Importances'])
+        y_labels = ax.get_yticklabels()
+        y_labels[min_index].set_style('italic')
+
+
+    if filepath:
+        save_plot(filepath)
+
+    return df_importance.transpose().to_dict() if to_dict else df_importance.transpose()
+
+    
