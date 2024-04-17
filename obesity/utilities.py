@@ -1,12 +1,15 @@
 import warnings
-
 import webcolors
+import torch
+
 import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FixedLocator
 import matplotlib.colors as mcolors
+
+from sklearn.metrics import confusion_matrix
+from matplotlib.ticker import FixedLocator
 
 from typing import Any, Dict, List, Tuple, Union
 
@@ -222,12 +225,12 @@ def customize_plot_colors(ax: plt.Axes,
     """
     
     if color_grid is not None and not axgridx and not axgridy:
-        raise Warning("color_grid is provided but axgridx and axgridy are False. "
+        warnings.warn("color_grid is provided but axgridx and axgridy are False. "
                       "Grid lines will not be shown.")
     
     if (axgridx or axgridy) and color_grid is None:
         color_grid = 'gray'
-        raise Warning("axgridx or axgridy is provided but color_grid is not. "
+        warnings.warn("axgridx or axgridy is provided but color_grid is not. "
                       "Default color 'gray' will be used for grid lines.")
     
     if axgridx:
@@ -783,4 +786,87 @@ def plot_feature_importance(ax: plt.Axes,
 
     return df_importance.transpose().to_dict() if to_dict else df_importance.transpose()
 
+
+def plot_confusion_matrix_heatmap(ax: plt.Axes,
+                                  y_true: Union[np.ndarray, torch.Tensor],
+                                  y_pred: Union[np.ndarray, torch.Tensor],
+                                  target_names: List[str] = None,
+                                  **kwargs) -> np.ndarray:
     
+    """
+    Plot a confusion matrix heatmap.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    y_true (np.ndarray, torch.Tensor):
+        The true labels.
+
+    y_pred (np.ndarray, torch.Tensor):
+        The predicted labels.
+
+    target_names (List[str], optional):
+        The names of the target classes. Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    np.ndarray:
+        The confusion matrix.
+
+    This function plots a confusion matrix heatmap.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+
+    Examples:
+    ---------
+    >>> plot_confusion_matrix_heatmap(ax, y_true, y_pred, target_names=['A', 'B', 'C'], color='Blues', alpha=0.8, linewidth=0.1)
+    """
+    
+    if isinstance(y_true, torch.Tensor):
+        y_true = y_true.cpu().numpy()
+    if isinstance(y_pred, torch.Tensor):
+        y_pred = y_pred.cpu().numpy()
+
+    cm = confusion_matrix(y_true, y_pred)
+
+    if target_names is None:
+        target_names = np.unique(y_true)
+
+    graphcolor = kwargs.pop('graph_color', '#000000')
+
+    axgridx           = kwargs.pop('axgridx', False)
+    axgridy           = kwargs.pop('axgridy', False)
+    color_spine       = kwargs.pop('color_spine', adjust_color(graphcolor, 0.45))
+    color_tick        = kwargs.pop('color_tick', adjust_color(graphcolor, 0.45))
+    color_grid        = kwargs.pop('color_grid', None)
+    title_before      = kwargs.pop('title_before', '')
+    title_addition    = kwargs.pop('title_addition', '')
+    title             = kwargs.pop('title', 'Confusion Matrix')
+    filepath          = kwargs.pop('filepath', None)
+
+    kwargs['linewidth'] = kwargs.get('linewidth', 0.1)
+    kwargs['linecolor'] = kwargs.get('linecolor', 'black')
+    kwargs['alpha']     = kwargs.get('alpha', 0.9)
+    kwargs['cmap']      = kwargs.get('cmap', 'Blues')
+    kwargs['cbar']      = kwargs.get('cbar', False)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+    
+    sns.heatmap(cm, annot=True, fmt='d', 
+                xticklabels=target_names, 
+                yticklabels=target_names, 
+                **kwargs)
+    
+    plt.title(title_before + title + title_addition, fontweight='bold')
+    plt.xlabel('Predicted', fontweight='bold')
+    plt.ylabel('Actual', fontweight='bold')
+
+    if filepath:
+        save_plot(filepath)
+
+    return cm
