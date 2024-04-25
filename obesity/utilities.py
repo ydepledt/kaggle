@@ -651,9 +651,6 @@ def plot_boxplot(ax: plt.Axes,
     the appearance of the plot, such as colors, edge color, and line width.
     """
 
-    NB_BOX = len(dataframe[x].unique())
-    print(NB_BOX)
-
     graphcolor = kwargs.pop('graph_color', '#000000')
 
     if 'color' not in kwargs:
