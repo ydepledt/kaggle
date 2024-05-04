@@ -769,7 +769,7 @@ def plot_kde(ax: plt.Axes,
     title_before      = kwargs.pop('title_before', '')
     title_after       = kwargs.pop('title_after', '')
     title             = kwargs.pop('title', f'Kernel Density Estimation (KDE) of {column}' + \
-                                   (' by ' + group_column) if group_column else '')
+                                  (' by ' + group_column if group_column else ''))
     labels            = kwargs.pop('labels', None)
     filepath          = kwargs.pop('filepath', None)
 
@@ -777,7 +777,7 @@ def plot_kde(ax: plt.Axes,
     kwargs['linewidth'] = kwargs.get('linewidth', 0.7)
     kwargs['alpha']     = kwargs.get('alpha', 0.6)
 
-    if isinstance(dataframe, str):
+    if isinstance(dataframe, pd.DataFrame):
         dataframe = [dataframe]
     color = kwargs.pop('color', ColorGenerator.COLORS['BLUE'])
 
