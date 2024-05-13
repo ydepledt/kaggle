@@ -395,6 +395,10 @@ def plot_missing_data(ax: plt.Axes,
                     hue=filtered_missing_info_df.index,
                     **kwargs)
         plt.ylabel('Counts', color=color_label, fontsize=11)
+
+    xtick_labels = [f"{word[:9]}...{word[-9:]}" if len(word) > 18 else word for word in filtered_missing_info_df.index]
+    ax.set_xticks(range(len(xtick_labels)))
+    ax.set_xticklabels(xtick_labels)
     
     for i, patch in enumerate(ax.patches):
         patch.set_edgecolor(kwargs['edgecolor'][i])
