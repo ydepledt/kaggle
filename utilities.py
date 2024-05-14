@@ -559,7 +559,10 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     path is provided, the plot will be saved as an image in PNG format.
     """
 
-    labels, counts = np.unique(dataframe[column], return_counts=True)
+    dataframe_formated = kwargs.pop('dataframe_formated', False)
+
+    labels, counts = (np.unique(dataframe[column], return_counts=True) if not dataframe_formated else (dataframe[column].index, dataframe[column].values.ravel()))
+    
     percentages = counts / len(dataframe) * 100
     
     df_counts = pd.DataFrame({'Labels': labels, 
@@ -585,13 +588,16 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     title_after      = kwargs.pop('title_after', '')
     filepath         = kwargs.pop('filepath', None)
     add_value        = kwargs.pop('add_value', True)
+    horizontaly      = kwargs.pop('horizontaly', False)
 
     kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
     kwargs['alpha'] = kwargs.get('alpha', 0.9)
 
+
     if frequency:
-        sns.barplot(y='Percentages', 
-                    x='Labels', 
+        x_lab, y_lab = ('Percentages', 'Counts') if horizontaly else ('Counts', 'Percentages')
+        sns.barplot(y=x_lab, 
+                    x=y_lab, 
                     data=df_counts, 
                     palette=kwargs.pop('color'),
                     hue='Labels',
@@ -602,13 +608,14 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
     else:
-        ax = sns.barplot(y='Counts', 
-                         x='Labels', 
-                         data=df_counts, 
-                         palette=kwargs.pop('color'),
-                         hue='Labels',
-                         legend=False,
-                         **kwargs)
+        x_lab, y_lab = ('Counts', 'Percentages') if horizontaly else ('Percentages', 'Counts')
+        sns.barplot(y=x_lab, 
+                    x=y_lab, 
+                    data=df_counts, 
+                    palette=kwargs.pop('color'),
+                    hue='Labels',
+                    legend=False,
+                    **kwargs)
         plt.ylabel('Counts', color=color_label, fontsize=11)
 
     for i, patch in enumerate(ax.patches):
