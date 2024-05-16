@@ -266,7 +266,9 @@ def customize_plot_colors(ax: plt.Axes,
 def add_value_labels(ax: plt.Axes, 
                      color: str,
                      percentage: int = 5,
-                     frequency: bool = True) -> None:
+                     frequency: bool = True,
+                     horizontal: bool = False,
+                     outside: bool = False) -> None:
     """
     Add value labels to the bars in a bar plot.
 
@@ -284,19 +286,33 @@ def add_value_labels(ax: plt.Axes,
     frequency (bool, optional):
         If True, the value labels will be displayed as frequencies. Defaults to True.
 
+    horizontal (bool, optional):
+        If True, the value labels will be displayed for a horizontal bar plot. Defaults to False.
+
     Returns:
     --------
     None
     """
 
-    patch_data = [(p.get_x(), p.get_width(), p.get_height()) for p in ax.patches]
-    dx_text_height = sum([p[2] for p in patch_data]) / len(patch_data) * percentage / 100
+    patch_data = [(p.get_x(), p.get_width(), p.get_height()) for p in ax.patches] if not horizontal else \
+                 [(p.get_y(), p.get_height(), p.get_width()) for p in ax.patches]
 
-    for x, width, height in patch_data:
-        ax.annotate(f'{height:.2f}%' if frequency else f'{height:.0f}',
-                    (x + width / 2., height-dx_text_height), 
-                    ha='center', va='center', fontsize=8, fontweight='bold', 
-                    color=color, xytext=(0, 5), textcoords='offset points')
+    dx_text = -sum([p[2] for p in patch_data]) / len(patch_data) * percentage / 100 if not outside else \
+               sum([p[2] for p in patch_data]) / len(patch_data) * percentage / 100
+
+
+    if not horizontal:
+        for x, width, height in patch_data:
+            ax.annotate(f'{height:.2f}%' if frequency else f'{height:.0f}',
+                        (x + width / 2., height+dx_text), 
+                        ha='center', va='center', fontsize=8, fontweight='bold', 
+                        color=color, xytext=(0, 5), textcoords='offset points')
+    else:
+        for y, height, width in patch_data:
+            ax.annotate(f'{width:.2f}%' if frequency else f'{width:.0f}',
+                        (width+dx_text, y + height / 2.), 
+                        ha='center', va='center', fontsize=8, fontweight='bold', 
+                        color=color, xytext=(5, 0), textcoords='offset points')
 
 
 
@@ -562,7 +578,6 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     dataframe_formated = kwargs.pop('dataframe_formated', False)
 
     labels, counts = (np.unique(dataframe[column], return_counts=True) if not dataframe_formated else (dataframe[column].index, dataframe[column].values.ravel()))
-    
     percentages = counts / len(dataframe) * 100
     
     df_counts = pd.DataFrame({'Labels': labels, 
@@ -582,20 +597,24 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     color_spine      = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
     color_tick       = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
     color_grid       = kwargs.pop('color_grid', ColorGenerator.adjust_color(graphcolor, -0.4))
-    percentage_label = kwargs.pop('percentage_label', 8)
+    color_annot      = kwargs.pop('color_annot', ColorGenerator.adjust_color(graphcolor, 0.3))
+    percentage_annot = kwargs.pop('percentage_annot', 8)
+    outside_annot    = kwargs.pop('outside_annot', False)
     title            = kwargs.pop('title', f'Distribution of {column.capitalize()}')
     title_before     = kwargs.pop('title_before', '')
     title_after      = kwargs.pop('title_after', '')
     filepath         = kwargs.pop('filepath', None)
     add_value        = kwargs.pop('add_value', True)
     horizontaly      = kwargs.pop('horizontaly', False)
+    xticks_sep       = kwargs.pop('xticks_sep', 'auto')
+    yticks_sep       = kwargs.pop('yticks_sep', 'auto')
 
     kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
     kwargs['alpha'] = kwargs.get('alpha', 0.9)
 
 
     if frequency:
-        x_lab, y_lab = ('Percentages', 'Counts') if horizontaly else ('Counts', 'Percentages')
+        x_lab, y_lab = ('Percentages', 'Labels') if not horizontaly else ('Labels', 'Percentages')
         sns.barplot(y=x_lab, 
                     x=y_lab, 
                     data=df_counts, 
@@ -608,7 +627,7 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
     else:
-        x_lab, y_lab = ('Counts', 'Percentages') if horizontaly else ('Percentages', 'Counts')
+        x_lab, y_lab = ('Counts', 'Labels') if not horizontaly else ('Labels', 'Counts')
         sns.barplot(y=x_lab, 
                     x=y_lab, 
                     data=df_counts, 
@@ -622,7 +641,14 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         patch.set_edgecolor(kwargs['edgecolor'][i])
 
     if add_value:
-        add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_label)
+        add_value_labels(ax, color_annot, frequency=frequency, 
+                         percentage=percentage_annot, horizontal=horizontaly,
+                         outside=outside_annot)
+
+    if xticks_sep and xticks_sep != 'auto':
+        ax.xaxis.set_major_locator(plt.MultipleLocator(xticks_sep))
+    if yticks_sep and yticks_sep != 'auto':
+        ax.yaxis.set_major_locator(plt.MultipleLocator(yticks_sep))
 
     plt.title(title_before + title + title_after, fontweight='bold')
     plt.xlabel(column.capitalize(), color=color_label, fontsize=11)
