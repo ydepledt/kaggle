@@ -204,8 +204,11 @@ def adjust_graph_color(params: Dict[str, Any]) -> None:
 
 
 
-def pop_kwargs(kwargs: Dict[str, Any],
-               params: Dict[str, Any]) -> None:
+def adjust_kwargs(kwargs: Dict[str, Any],
+                  params: Dict[str, Any],
+                  fill: bool = True,
+                  linewidth: bool = True,
+                  alpha: bool = True) -> None:
     """
     Pop the specified keyword arguments from the kwargs.
 
@@ -221,6 +224,12 @@ def pop_kwargs(kwargs: Dict[str, Any],
     --------
     None
     """
+    if fill:
+        kwargs['fill']      = kwargs.get('fill', False)
+    if linewidth:
+        kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
+    if alpha:
+        kwargs['alpha']     = kwargs.get('alpha', 0.9)
 
     for param in params:
         if param in kwargs:
@@ -365,7 +374,9 @@ def add_value_labels(ax: plt.Axes,
             
 
 
-def final_graph_customization(ax: plt.Axes, params: Dict[str, Any]) -> None:
+def final_graph_customization(ax: plt.Axes, 
+                              params: Dict[str, Any],
+                              kwargs: Dict[str, Any]) -> None:
     """
     Customize the final appearance of the plot.
 
@@ -395,9 +406,15 @@ def final_graph_customization(ax: plt.Axes, params: Dict[str, Any]) -> None:
         ax.set_yticks(range(len(ytick_labels)))
         ax.set_yticklabels(ytick_labels)
 
+    if params.get('xticks_sep') and params['xticks_sep'] != 'auto':
+        ax.xaxis.set_major_locator(plt.MultipleLocator(params['xticks_sep']))
+    if params.get('yticks_sep') and params['yticks_sep'] != 'auto':
+        ax.yaxis.set_major_locator(plt.MultipleLocator(params['yticks_sep']))
+
     if params.get('add_value_label'):
         add_value_labels(ax, params.get('color_annot'), 
                          frequency=params.get('frequency'), 
+                         horizontal=params.get('horizontal'),
                          percentage=params.get('percentage_label'))
     
     customize_plot_colors(ax, 
@@ -406,6 +423,10 @@ def final_graph_customization(ax: plt.Axes, params: Dict[str, Any]) -> None:
                           color_grid=params.get('color_grid'),
                           color_spine=params.get('color_spine'), 
                           color_tick=params.get('color_tick'))
+    
+    if params.get('set_edgecolor'):
+        for i, patch in enumerate(ax.patches):
+            patch.set_edgecolor(kwargs['edgecolor'][i])
     
     plt.title(params['title_before'] + params['title'] + params['title_after'], fontweight='bold')
     plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight=params['x_label_fontweight'])
@@ -478,15 +499,13 @@ def plot_missing_data(ax: plt.Axes,
         'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': True, 'filepath': None,
         'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
         'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
-        'y_tick_shorten': None, 'x_label_title': 'Feature', 'y_label_title': None,
+        'y_tick_shorten': None, 'x_label_title': 'Feature', 'y_label_title': None, 'xticks_sep': 'auto', 'yticks_sep': 'auto',
     }
 
-    pop_kwargs(kwargs, params)
+    adjust_kwargs(kwargs, params)
 
     adjust_graph_color(params)
 
-    kwargs['linewidth']     = kwargs.get('linewidth', 1.8)
-    kwargs['alpha']         = kwargs.get('alpha', 0.9)
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
     y_title = 'Percentage Missing' if params['frequency'] else 'Total Missing'
@@ -502,15 +521,13 @@ def plot_missing_data(ax: plt.Axes,
         ticks = ax.get_yticks()
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.2f}%' for tick in ticks])
-    
-    for i, patch in enumerate(ax.patches):
-        patch.set_edgecolor(kwargs['edgecolor'][i])
 
-    final_graph_customization(ax, params)
+    final_graph_customization(ax, params, kwargs)
 
     save_plot(params['filepath'])
 
     return missing_info_df
+
 
 
 def plot_groupby(ax: plt.Axes,
@@ -575,22 +592,17 @@ def plot_groupby(ax: plt.Axes,
         'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
         'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
         'y_ticks_shorten': None, 'x_label_title': f'{group.capitalize()} Category', 'y_label_title': f'{result_label.capitalize()} Percentage',
+        'xticks_sep': 'auto', 'yticks_sep': 'auto'
     }
 
-    pop_kwargs(kwargs, params)
+    adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
-
-    kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
-    kwargs['alpha'] = kwargs.get('alpha', 0.9)
 
     sns.barplot(y='Group Percentage', x=df.index, 
                 data=df, palette=kwargs.pop('color'),
                 hue=df.index, legend=False, **kwargs)
 
-    for i, patch in enumerate(ax.patches):
-        patch.set_edgecolor(kwargs['edgecolor'][i])
-
-    final_graph_customization(ax, params)
+    final_graph_customization(ax, params, kwargs)
     save_plot(params['filepath'])
 
     return df
@@ -601,7 +613,6 @@ def plot_groupby(ax: plt.Axes,
 def plot_hist_discrete_feature(ax: plt.Axes,
                                dataframe: pd.DataFrame, 
                                column: str,
-                               frequency: bool = False,
                                **kwargs) -> pd.DataFrame:
     """
     Plot a histogram for a specified column in a DataFrame with customizable options.
@@ -648,80 +659,43 @@ def plot_hist_discrete_feature(ax: plt.Axes,
 
     df_counts.sort_values(by='Counts', ascending=False, inplace=True)
 
-    graphcolor = kwargs.pop('graph_color', '#000000')
-
     get_colors(len(labels), kwargs)
     get_edgecolors(0.5, kwargs)
 
-    axgridx          = kwargs.pop('axgridx', False)
-    axgridy          = kwargs.pop('axgridy', True)
-    color_label      = kwargs.pop('color_label', ColorGenerator.adjust_color(graphcolor, 0.3))
-    color_spine      = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_tick       = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_grid       = kwargs.pop('color_grid', ColorGenerator.adjust_color(graphcolor, -0.4))
-    color_annot      = kwargs.pop('color_annot', ColorGenerator.adjust_color(graphcolor, 0.3))
-    percentage_annot = kwargs.pop('percentage_annot', 8)
-    outside_annot    = kwargs.pop('outside_annot', False)
-    title            = kwargs.pop('title', f'Distribution of {column.capitalize()}')
-    title_before     = kwargs.pop('title_before', '')
-    title_after      = kwargs.pop('title_after', '')
-    filepath         = kwargs.pop('filepath', None)
-    add_value        = kwargs.pop('add_value', True)
-    horizontaly      = kwargs.pop('horizontaly', False)
-    xticks_sep       = kwargs.pop('xticks_sep', 'auto')
-    yticks_sep       = kwargs.pop('yticks_sep', 'auto')
+    params = {
+        'graphcolor': '#000000', 'rotation': 45, 'axgridx': False, 'axgridy': True, 'title': f'Distribution of {column.capitalize()}',
+        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
+        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
+        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
+        'y_ticks_shorten': None, 'x_label_title': column.capitalize(), 'y_label_title': None, 'horizontal': False,
+        'xticks_sep': 'auto', 'yticks_sep': 'auto'
+    }
 
-    kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
-    kwargs['alpha'] = kwargs.get('alpha', 0.9)
+    adjust_kwargs(kwargs, params)
+    adjust_graph_color(params)
 
+    params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
-    if frequency:
-        x_lab, y_lab = ('Percentages', 'Labels') if not horizontaly else ('Labels', 'Percentages')
-        sns.barplot(y=x_lab, 
-                    x=y_lab, 
-                    data=df_counts, 
-                    palette=kwargs.pop('color'),
-                    hue='Labels',
-                    legend=False,
-                    **kwargs)
-        plt.ylabel('Frequency', color=color_label, fontsize=11)
+    x_lab, y_lab = ('Percentages', 'Labels') if not params['horizontal'] else ('Labels', 'Percentages')
+    sns.barplot(y=x_lab,
+                x=y_lab,
+                data=df_counts,
+                palette=kwargs.pop('color'),
+                hue='Labels',
+                legend=False,
+                **kwargs)
+
+    if params['frequency']:
         ticks = ax.get_yticks()
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
-    else:
-        x_lab, y_lab = ('Counts', 'Labels') if not horizontaly else ('Labels', 'Counts')
-        sns.barplot(y=x_lab, 
-                    x=y_lab, 
-                    data=df_counts, 
-                    palette=kwargs.pop('color'),
-                    hue='Labels',
-                    legend=False,
-                    **kwargs)
-        plt.ylabel('Counts', color=color_label, fontsize=11)
+        
+    final_graph_customization(ax, params, kwargs)
 
-    for i, patch in enumerate(ax.patches):
-        patch.set_edgecolor(kwargs['edgecolor'][i])
-
-    if add_value:
-        add_value_labels(ax, color_annot, frequency=frequency, 
-                         percentage=percentage_annot, horizontal=horizontaly,
-                         outside=outside_annot)
-
-    if xticks_sep and xticks_sep != 'auto':
-        ax.xaxis.set_major_locator(plt.MultipleLocator(xticks_sep))
-    if yticks_sep and yticks_sep != 'auto':
-        ax.yaxis.set_major_locator(plt.MultipleLocator(yticks_sep))
-
-    plt.title(title_before + title + title_after, fontweight='bold')
-    plt.xlabel(column.capitalize(), color=color_label, fontsize=11)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-
-    if filepath:
-        save_plot(filepath)
+    save_plot(params['filepath'])
 
     return df_counts
+
 
 
 def plot_boxplot(ax: plt.Axes,
@@ -757,8 +731,6 @@ def plot_boxplot(ax: plt.Axes,
     the appearance of the plot, such as colors, edge color, and line width.
     """
 
-    graphcolor = kwargs.pop('graph_color', '#000000')
-
     if 'color' not in kwargs:
         kwargs['color'] = 'inferno'
     get_colors(len(dataframe[x].unique()), kwargs)
@@ -766,18 +738,15 @@ def plot_boxplot(ax: plt.Axes,
     default_median_style = dict(linewidth=1.5, color='auto')
     default_outlier_style = dict(marker='o')
 
-
-    axgridx           = kwargs.pop('axgridx', False)
-    axgridy           = kwargs.pop('axgridy', True)
-    color_label       = kwargs.pop('color_label', ColorGenerator.adjust_color(graphcolor, 0.3))
-    color_spine       = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_tick        = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_grid        = kwargs.pop('color_grid', ColorGenerator.adjust_color(graphcolor, -0.4))
-    title             = kwargs.pop('title', f'Boxplot of {x.capitalize()} and {y.capitalize()}')
-    title_before      = kwargs.pop('title_before', '')
-    title_addition    = kwargs.pop('title_addition', '')
-    filepath          = kwargs.pop('filepath', None)
-    outlier_style     = {**default_outlier_style, **kwargs.pop('outlier_style', {})}
+    params = {
+        'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True, 'title': f'Boxplot of {x.capitalize()} and {y.capitalize()}',
+        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
+        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
+        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': False, 'x_ticks_shorten': None,
+        'y_ticks_shorten': None, 'x_label_title': x.capitalize(), 'y_label_title': y.capitalize(), 'horizontal': False,
+        'xticks_sep': 'auto', 'yticks_sep': 'auto', 'outlier_style': default_outlier_style, 'median_style': default_median_style,
+        'alpha': 0.6, 'set_edgecolor': False
+    }
 
     if default_median_style['color'] != 'auto':
         median_style = {**default_median_style, **kwargs.pop('median_style', {})}  
@@ -785,30 +754,24 @@ def plot_boxplot(ax: plt.Axes,
         median_color = default_median_style.pop('color')
         median_style = {**default_median_style, **kwargs.pop('median_style', {})}
 
-
-    alpha = kwargs.pop('alpha', 0.8)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
+    adjust_kwargs(kwargs, params, alpha=False)
+    adjust_graph_color(params)
 
     sns.boxplot(x=x, y=y, data=dataframe, palette=kwargs.pop('color'), 
-                hue=x, medianprops=median_style, flierprops=outlier_style, **kwargs)
+                hue=x, medianprops=median_style, flierprops=params['outlier_style'], **kwargs)
     
     for patch in ax.patches:
         r, g, b, _ = patch.get_facecolor()
-        patch.set_facecolor((r, g, b, alpha))
+        patch.set_facecolor((r, g, b, params['alpha']))
     
     if median_color == 'auto':
         for i, line in enumerate(ax.lines):
             if median_color == 'auto' and i % 6 == 4 and i != 0:
                 line.set_color(ColorGenerator.adjust_color(ax.patches[i//6].get_facecolor(), -0.2))
 
-    plt.title(title_before + title + title_addition, fontweight='bold')
-    plt.xlabel(x.capitalize(), color=color_label, fontsize=11)
-    plt.ylabel(y.capitalize(), color=color_label, fontsize=11)
+    final_graph_customization(ax, params, kwargs)
 
-    if filepath:
-        save_plot(filepath)
+    save_plot(params['filepath'])
 
 
 def plot_kde(ax: plt.Axes,
@@ -848,33 +811,26 @@ def plot_kde(ax: plt.Axes,
     ---------
     >>> plot_kde(ax, df, 'heart_rate', color='red', alpha=0.8, linewidth=0.1)
     """
-    
-    graphcolor = kwargs.pop('graph_color', '#000000')
 
     if isinstance(dataframe, list) and group_column:
         raise ValueError("group_column cannot be specified when passing a list of DataFrames. Feature not supported yet.")
 
-    nb_colors = len(dataframe) if isinstance(dataframe, list) else 1
+    nb_colors  = len(dataframe) if isinstance(dataframe, list) else 1
     nb_colors2 = len(dataframe[group_column].unique()) if group_column else 1
 
     get_colors(max(nb_colors, nb_colors2), kwargs)
 
-    axgridx          = kwargs.pop('axgridx', False)
-    axgridy          = kwargs.pop('axgridy', True)
-    color_label      = kwargs.pop('color_label', ColorGenerator.adjust_color(graphcolor, 0.3))
-    color_spine      = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_tick       = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_grid       = kwargs.pop('color_grid', ColorGenerator.adjust_color(graphcolor, -0.4))
-    title_before      = kwargs.pop('title_before', '')
-    title_after       = kwargs.pop('title_after', '')
-    title             = kwargs.pop('title', f'Kernel Density Estimation (KDE) of {column}' + \
-                                  (' by ' + group_column if group_column else ''))
-    labels            = kwargs.pop('labels', None)
-    filepath          = kwargs.pop('filepath', None)
+    params = {
+        'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True, 'title': f'Kernel Density Estimation (KDE) of {column}' + (' by ' + group_column if group_column else ''),
+        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
+        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
+        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': False, 'x_ticks_shorten': None,
+        'y_ticks_shorten': None, 'x_label_title': column.capitalize(), 'y_label_title': 'Density', 'horizontal': False,
+        'xticks_sep': 'auto', 'yticks_sep': 'auto', 'labels': None
+    }
 
-    kwargs['fill']      = kwargs.get('fill', False)
-    kwargs['linewidth'] = kwargs.get('linewidth', 0.7)
-    kwargs['alpha']     = kwargs.get('alpha', 0.6)
+    adjust_kwargs(kwargs, params, alpha=True, fill=True)
+    adjust_graph_color(params)
 
     if isinstance(dataframe, pd.DataFrame):
         dataframe = [dataframe]
@@ -883,24 +839,17 @@ def plot_kde(ax: plt.Axes,
     if group_column:
         for i, group in enumerate(dataframe[group_column].unique()):
             sns.kdeplot(dataframe[dataframe[group_column] == group][column], 
-                        color=color[i], label=labels[i] if labels else group, **kwargs)
+                        color=color[i], label=params['labels'][i] if params['labels'] else group, **kwargs)
     
         plt.legend()
     else:
         for i, df in enumerate(dataframe):
             sns.kdeplot(df[column], color=color[i], 
-                        label=labels[i] if labels else f'DataFrame {i}', **kwargs)
+                        label=params['labels'][i] if params['labels'] else f'DataFrame {i}', **kwargs)
         plt.legend() if len(dataframe) > 1 else None
 
-    plt.title(title_before + title + title_after, fontweight='bold')
-    plt.xlabel(column.capitalize(), color=color_label, fontsize=11)
-    plt.ylabel('Density', color=color_label, fontsize=11)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
     
-    if filepath:
-        save_plot(filepath)    
+    save_plot(params['filepath'])    
 
 
 def categorize_column(df: pd.DataFrame,
