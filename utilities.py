@@ -17,6 +17,18 @@ from matplotlib import colormaps
 
 from typing import Any, Dict, List, Tuple, Union
 
+DEFAULT_PARAMETER = {
+    'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True,
+    'title': '', 'title_before': '', 'title_after': '', 'percentage_annot': 8,
+    'frequency': False, 'filepath': None, 'title_fontsize': 14, 'title_fontweight': 'bold',
+    'x_label_fontsize': 11, 'x_label_fontweight': None, 'y_label_fontsize': 11,
+    'y_label_fontweight': None, 'add_value_annot': True, 'x_ticks_shorten': None,
+    'y_ticks_shorten': None, 'x_label_title': '', 'y_label_title': '', 'horizontal': False,
+    'xticks_sep': 'auto', 'yticks_sep': 'auto', 'set_edgecolor': True,
+    'color_label': 'auto', 'color_spine': 'auto', 'color_tick': 'auto', 'color_grid': 'auto',
+    'color_annot': 'auto', 'annot_fontsize': 8, 'color_annot': 'matching', 'add_value_annot': True,
+}
+
 class ColorGenerator:
     COLORS = {
         'BLUE': '#3D6FFF',
@@ -196,19 +208,19 @@ def adjust_graph_color(params: Dict[str, Any]) -> None:
     --------
     None
     """
-    params['color_label'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)
-    params['color_spine'] = ColorGenerator.adjust_color(params['graphcolor'], 0.45)
-    params['color_tick']  = ColorGenerator.adjust_color(params['graphcolor'], 0.45)
-    params['color_grid']  = ColorGenerator.adjust_color(params['graphcolor'], -0.4)
-    params['color_annot'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)
+    params['color_label'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)  if params['color_label'] == 'auto' else params['color_label']
+    params['color_spine'] = ColorGenerator.adjust_color(params['graphcolor'], 0.45) if params['color_spine'] == 'auto' else params['color_spine']
+    params['color_tick']  = ColorGenerator.adjust_color(params['graphcolor'], 0.45) if params['color_tick'] == 'auto' else params['color_tick']
+    params['color_grid']  = ColorGenerator.adjust_color(params['graphcolor'], -0.4) if params['color_grid'] == 'auto' else params['color_grid']
+    params['color_annot'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)  if params['color_annot'] == 'auto' else params['color_annot']
 
 
 
 def adjust_kwargs(kwargs: Dict[str, Any],
                   params: Dict[str, Any],
-                  fill: bool = True,
-                  linewidth: bool = True,
-                  alpha: bool = True) -> None:
+                  fill: bool = False,
+                  linewidth: bool = False,
+                  alpha: bool = False) -> None:
     """
     Pop the specified keyword arguments from the kwargs.
 
@@ -323,6 +335,7 @@ def customize_plot_colors(ax: plt.Axes,
 
 def add_value_labels(ax: plt.Axes, 
                      color: str,
+                     fontsize: int = 8,
                      percentage: int = 5,
                      frequency: bool = True,
                      horizontal: bool = False,
@@ -351,6 +364,8 @@ def add_value_labels(ax: plt.Axes,
     --------
     None
     """
+    
+    color = [ColorGenerator.adjust_color(p.get_facecolor(), 0.5) for p in ax.patches] if color == 'matching' else [color] * len(ax.patches)
 
     patch_data = [(p.get_x(), p.get_width(), p.get_height()) for p in ax.patches] if not horizontal else \
                  [(p.get_y(), p.get_height(), p.get_width()) for p in ax.patches]
@@ -360,17 +375,17 @@ def add_value_labels(ax: plt.Axes,
 
 
     if not horizontal:
-        for x, width, height in patch_data:
+        for i, (x, width, height) in enumerate(patch_data):
             ax.annotate(f'{height:.2f}%' if frequency else f'{height:.0f}',
                         (x + width / 2., height+dx_text), 
-                        ha='center', va='center', fontsize=8, fontweight='bold', 
-                        color=color, xytext=(0, 5), textcoords='offset points')
+                        ha='center', va='center', fontsize=fontsize, fontweight='bold', 
+                        color=color[i], xytext=(0, 5), textcoords='offset points')
     else:
-        for y, height, width in patch_data:
+        for i, (y, height, width) in enumerate(patch_data):
             ax.annotate(f'{width:.2f}%' if frequency else f'{width:.0f}',
                         (width+dx_text, y + height / 2.), 
-                        ha='center', va='center', fontsize=8, fontweight='bold', 
-                        color=color, xytext=(5, 0), textcoords='offset points')
+                        ha='center', va='center', fontsize=fontsize, fontweight='bold', 
+                        color=color[i], xytext=(5, 0), textcoords='offset points')
             
 
 
@@ -411,11 +426,12 @@ def final_graph_customization(ax: plt.Axes,
     if params.get('yticks_sep') and params['yticks_sep'] != 'auto':
         ax.yaxis.set_major_locator(plt.MultipleLocator(params['yticks_sep']))
 
-    if params.get('add_value_label'):
+    if params.get('add_value_annot'):
         add_value_labels(ax, params.get('color_annot'), 
+                         fontsize=params.get('annot_fontsize'),
                          frequency=params.get('frequency'), 
                          horizontal=params.get('horizontal'),
-                         percentage=params.get('percentage_label'))
+                         percentage=params.get('percentage_annot'))
     
     customize_plot_colors(ax, 
                           axgridx=params.get('axgridx'), 
@@ -428,7 +444,7 @@ def final_graph_customization(ax: plt.Axes,
         for i, patch in enumerate(ax.patches):
             patch.set_edgecolor(kwargs['edgecolor'][i])
     
-    plt.title(params['title_before'] + params['title'] + params['title_after'], fontweight='bold')
+    plt.title(params['title_before'] + params['title'] + params['title_after'], fontsize=params['title_fontsize'], fontweight='bold')
     plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight=params['x_label_fontweight'])
     plt.ylabel(params['y_label_title'], color=params['color_label'], fontsize=params['y_label_fontsize'], fontweight=params['y_label_fontweight'])
 
@@ -494,16 +510,10 @@ def plot_missing_data(ax: plt.Axes,
     get_colors(len(filtered_missing_info_df), kwargs)
     get_edgecolors(0.5, kwargs)
 
-    params = {
-        'graphcolor': '#000000', 'rotation': 45, 'axgridx': False, 'axgridy': True, 'title': 'Missing Data', 
-        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': True, 'filepath': None,
-        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
-        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
-        'y_tick_shorten': None, 'x_label_title': 'Feature', 'y_label_title': None, 'xticks_sep': 'auto', 'yticks_sep': 'auto',
-    }
+    params = {'title': 'Missing Data', 'x_label_title': 'Feature', 'y_label_title': 'Frequency', 'percentage': True}
+    params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params)
-
     adjust_graph_color(params)
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
@@ -580,25 +590,24 @@ def plot_groupby(ax: plt.Axes,
     df = pd.DataFrame({
         'Group Percentage': percentage_by_group,
         'Total': total_by_group,
-        'Grouped total': number_by_group
+        'Group total': number_by_group
     })
 
     get_colors(len(df), kwargs)
     get_edgecolors(0.5, kwargs)
 
-    params = {
-        'graphcolor': '#000000', 'rotation': 45, 'axgridx': False, 'axgridy': True, 'title': f'{result_label.capitalize()} Percentage by {group.capitalize()} Category',
-        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': True, 'filepath': None,
-        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
-        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
-        'y_ticks_shorten': None, 'x_label_title': f'{group.capitalize()} Category', 'y_label_title': f'{result_label.capitalize()} Percentage',
-        'xticks_sep': 'auto', 'yticks_sep': 'auto'
-    }
+    params = {'x_label_title': f'{group.capitalize()} Category'}
+    params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
 
-    sns.barplot(y='Group Percentage', x=df.index, 
+    params['title'] = f"{result_label.capitalize()} {'Percentage' if params['frequency'] else 'Total'} by {group.capitalize()} Category"
+    params['y_label_title'] = f"{result_label.capitalize()} {'Percentage' if params['frequency'] else 'Total'}"
+
+    y_title = 'Group Percentage' if params['frequency'] else 'Group total'
+
+    sns.barplot(y=y_title, x=df.index, 
                 data=df, palette=kwargs.pop('color'),
                 hue=df.index, legend=False, **kwargs)
 
@@ -662,14 +671,8 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     get_colors(len(labels), kwargs)
     get_edgecolors(0.5, kwargs)
 
-    params = {
-        'graphcolor': '#000000', 'rotation': 45, 'axgridx': False, 'axgridy': True, 'title': f'Distribution of {column.capitalize()}',
-        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
-        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
-        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': True, 'x_ticks_shorten': None,
-        'y_ticks_shorten': None, 'x_label_title': column.capitalize(), 'y_label_title': None, 'horizontal': False,
-        'xticks_sep': 'auto', 'yticks_sep': 'auto'
-    }
+    params = {'title': f'Distribution of {column.capitalize()}', 'x_label_title': column.capitalize()}
+    params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
@@ -738,15 +741,9 @@ def plot_boxplot(ax: plt.Axes,
     default_median_style = dict(linewidth=1.5, color='auto')
     default_outlier_style = dict(marker='o')
 
-    params = {
-        'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True, 'title': f'Boxplot of {x.capitalize()} and {y.capitalize()}',
-        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
-        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
-        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': False, 'x_ticks_shorten': None,
-        'y_ticks_shorten': None, 'x_label_title': x.capitalize(), 'y_label_title': y.capitalize(), 'horizontal': False,
-        'xticks_sep': 'auto', 'yticks_sep': 'auto', 'outlier_style': default_outlier_style, 'median_style': default_median_style,
-        'alpha': 0.6, 'set_edgecolor': False
-    }
+    params = {'title': f'Boxplot of {x.capitalize()} and {y.capitalize()}', 'x_label_title': x.capitalize(), 'y_label_title': y.capitalize(),
+              'outlier_style': default_outlier_style, 'median_style': default_median_style}
+    params = {**DEFAULT_PARAMETER, **params}
 
     if default_median_style['color'] != 'auto':
         median_style = {**default_median_style, **kwargs.pop('median_style', {})}  
@@ -811,7 +808,6 @@ def plot_kde(ax: plt.Axes,
     ---------
     >>> plot_kde(ax, df, 'heart_rate', color='red', alpha=0.8, linewidth=0.1)
     """
-
     if isinstance(dataframe, list) and group_column:
         raise ValueError("group_column cannot be specified when passing a list of DataFrames. Feature not supported yet.")
 
@@ -820,14 +816,9 @@ def plot_kde(ax: plt.Axes,
 
     get_colors(max(nb_colors, nb_colors2), kwargs)
 
-    params = {
-        'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True, 'title': f'Kernel Density Estimation (KDE) of {column}' + (' by ' + group_column if group_column else ''),
-        'title_before': '', 'title_after': '', 'percentage_label': 8, 'frequency': False, 'filepath': None,
-        'title_fontsize': 14, 'title_fontweight': 'bold', 'x_label_fontsize': 11, 'x_label_fontweight': None,
-        'y_label_fontsize': 11, 'y_label_fontweight': None, 'add_value_label': False, 'x_ticks_shorten': None,
-        'y_ticks_shorten': None, 'x_label_title': column.capitalize(), 'y_label_title': 'Density', 'horizontal': False,
-        'xticks_sep': 'auto', 'yticks_sep': 'auto', 'labels': None
-    }
+    params = {'title': f'Kernel Density Estimation (KDE) of {column}' + (' by ' + group_column if group_column else ''),
+              'x_label_title': column.capitalize(), 'y_label_title': 'Density', 'labels': None}
+    params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params, alpha=True, fill=True)
     adjust_graph_color(params)
@@ -837,8 +828,8 @@ def plot_kde(ax: plt.Axes,
     color = kwargs.pop('color', ColorGenerator.COLORS['BLUE'])
 
     if group_column:
-        for i, group in enumerate(dataframe[group_column].unique()):
-            sns.kdeplot(dataframe[dataframe[group_column] == group][column], 
+        for i, group in enumerate(dataframe[0][group_column].unique()):
+            sns.kdeplot(dataframe[0][dataframe[0][group_column] == group][column], 
                         color=color[i], label=params['labels'][i] if params['labels'] else group, **kwargs)
     
         plt.legend()
@@ -1894,7 +1885,7 @@ def plot_losses(ax: plt.Axes,
 #     legend_facecolor  = kwargs.pop('legend_facecolor', 'white')
 #     legend_edgecolor  = kwargs.pop('legend_edgecolor', 'grey')
 #     legend_framealpha = kwargs.pop('legend_framealpha', 0.5)
-#     percentage_label  = kwargs.pop('percentage_label', 18)
+#     percentage_annot  = kwargs.pop('percentage_annot', 18)
 #     title             = kwargs.pop('title', f'Distribution of {group.capitalize()} and {target.capitalize()}')
 #     title_before      = kwargs.pop('title_before', '')
 #     title_after       = kwargs.pop('title_after', '')
@@ -1916,7 +1907,7 @@ def plot_losses(ax: plt.Axes,
 #             edgecolor = edgecolor_chosen if edgecolor_chosen != 'auto' else ColorGenerator.adjust_color(patch.get_facecolor(), 0.5)
 #             patch.set_edgecolor(edgecolor)
 
-#         add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_label)
+#         add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_annot)
         
 
 #     else:
