@@ -27,6 +27,7 @@ DEFAULT_PARAMETER = {
     'xticks_sep': 'auto', 'yticks_sep': 'auto', 'set_edgecolor': True,
     'color_label': 'auto', 'color_spine': 'auto', 'color_tick': 'auto', 'color_grid': 'auto',
     'color_annot': 'auto', 'annot_fontsize': 8, 'color_annot': 'matching', 'add_value_annot': True,
+    'customize_plot_colors': True
 }
 
 class ColorGenerator:
@@ -220,7 +221,10 @@ def adjust_kwargs(kwargs: Dict[str, Any],
                   params: Dict[str, Any],
                   fill: bool = False,
                   linewidth: bool = False,
-                  alpha: bool = False) -> None:
+                  alpha: bool = False,
+                  linecolor: bool = False,
+                  cmap: bool = False,
+                  cbar: bool = False) -> None:
     """
     Pop the specified keyword arguments from the kwargs.
 
@@ -242,6 +246,12 @@ def adjust_kwargs(kwargs: Dict[str, Any],
         kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
     if alpha:
         kwargs['alpha']     = kwargs.get('alpha', 0.9)
+    if linecolor:
+        kwargs['linecolor'] = kwargs.get('linecolor', 'black')
+    if cmap:
+        kwargs['cmap']      = kwargs.get('cmap', 'Blues')
+    if cbar:
+        kwargs['cbar']      = kwargs.get('cbar', False)
 
     for param in params:
         if param in kwargs:
@@ -433,13 +443,14 @@ def final_graph_customization(ax: plt.Axes,
                          horizontal=params.get('horizontal'),
                          percentage=params.get('percentage_annot'))
     
-    customize_plot_colors(ax, 
-                          axgridx=params.get('axgridx'), 
-                          axgridy=params.get('axgridy'), 
-                          color_grid=params.get('color_grid'),
-                          color_spine=params.get('color_spine'), 
-                          color_tick=params.get('color_tick'))
-    
+    if params.get('customize_plot_colors'):
+        customize_plot_colors(ax, 
+                            axgridx=params.get('axgridx'), 
+                            axgridy=params.get('axgridy'), 
+                            color_grid=params.get('color_grid'),
+                            color_spine=params.get('color_spine'), 
+                            color_tick=params.get('color_tick'))
+        
     if params.get('set_edgecolor'):
         for i, patch in enumerate(ax.patches):
             patch.set_edgecolor(kwargs['edgecolor'][i])
@@ -742,7 +753,8 @@ def plot_boxplot(ax: plt.Axes,
     default_outlier_style = dict(marker='o')
 
     params = {'title': f'Boxplot of {x.capitalize()} and {y.capitalize()}', 'x_label_title': x.capitalize(), 'y_label_title': y.capitalize(),
-              'outlier_style': default_outlier_style, 'median_style': default_median_style}
+              'outlier_style': default_outlier_style, 'median_style': default_median_style, 'alpha': 0.8, 'add_value_annot': False,
+              'set_edgecolor': False}
     params = {**DEFAULT_PARAMETER, **params}
 
     if default_median_style['color'] != 'auto':
@@ -843,6 +855,708 @@ def plot_kde(ax: plt.Axes,
     save_plot(params['filepath'])    
 
 
+
+def plot_feature_importance(ax: plt.Axes,
+                            features: pd.Index,
+                            importances: np.ndarray, 
+                            **kwargs) -> Dict[str, float]:
+    """
+    Plot feature importances.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    features (pd.Index):
+        The features (columns) corresponding to the importances.
+    
+    importances (np.ndarray):
+        Feature importances obtained from a Random Forest classifier.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    Dict[str, float]:
+        A dictionary containing features and their corresponding importances.
+
+    This function plots the feature importances.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+    """
+    
+    df_importance = pd.DataFrame({'Features': features, 
+                                  'Importances': importances})
+        
+    df_importance.sort_values(by='Importances', ascending=False, inplace=True)
+    
+    get_colors(len(df_importance), kwargs)
+    get_edgecolors(0.5, kwargs)
+
+    params = {'title': 'Features importances', 'x_label_title': 'Importances', 'y_label_title': 'Features',
+              'to_dict': False, 'bold_max': True, 'italic_min': True, 'add_value_annot': False}
+    params = {**DEFAULT_PARAMETER, **params}
+
+    adjust_kwargs(kwargs, params)
+    adjust_graph_color(params)
+
+    sns.barplot(y='Features', x='Importances', 
+                data=df_importance, palette=kwargs.pop('color'), 
+                hue='Importances', legend=False, **kwargs)
+    
+    if params['bold_max']:
+        max_index = np.argmax(df_importance['Importances'])
+        y_labels = ax.get_yticklabels()
+        y_labels[max_index].set_weight('bold')
+
+    if params['italic_min']:
+        min_index = np.argmin(df_importance['Importances'])
+        y_labels = ax.get_yticklabels()
+        y_labels[min_index].set_style('italic')
+
+    final_graph_customization(ax, params, kwargs)
+
+    save_plot(params['filepath'])
+
+    return df_importance.transpose().to_dict() if params['to_dict'] else df_importance.transpose()
+
+
+
+def plot_classification(ax: plt.Axes,
+                        column_x: Union[np.ndarray, torch.Tensor],
+                        column_y: Union[np.ndarray, torch.Tensor],
+                        column_x_test: Union[np.ndarray, torch.Tensor] = None,
+                        column_y_test: Union[np.ndarray, torch.Tensor] = None,
+                        y_pred: Union[np.ndarray, torch.Tensor] = None,
+                        **kwargs) -> None:
+    
+    """
+    Plot a classification of two columns with customizable options.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The Axes object to plot the data.
+
+    column_x (Union[np.ndarray, torch.Tensor]):
+        The values of the first column.
+
+    column_y (Union[np.ndarray, torch.Tensor]):
+        The values of the second column.
+
+    column_x_test (Union[np.ndarray, torch.Tensor], optional):
+        The values of the first column for the test set. Defaults to None.
+
+    column_y_test (Union[np.ndarray, torch.Tensor], optional):
+        The values of the second column for the test set. Defaults to None.
+
+    y_pred (Union[np.ndarray, torch.Tensor], optional):
+        The predicted values. Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, edgecolor, marker, alpha, etc.).
+
+    Returns:
+    --------
+    None
+
+    This function plots a binary classification of two columns in a DataFrame with customizable options.
+    If the test set is provided, it plots the test set as well. If the predicted values are provided, it plots
+    the predicted values. The plot can be customized with additional keyword arguments.
+
+    Examples:
+    ---------
+    >>> plot_classification(column_x, column_y, ax, 
+                                   column_x_test, column_y_test, 
+                                   y_pred, color=('blue', 'red'), color_test=('cyan', 'salmon'), color_pred='auto',
+                                   edgecolor='black', label_class=('Class 1', 'Class 2'), title='Binary Classification',
+                                   marker='o', marker_test='x', marker_pred='^', 
+                                   alpha=0.7, alpha_pred=0.8, fraction=0.8, fraction_test=0.95)
+    """
+
+    NB_CLASSES = len(np.unique(column_y))
+    LIST_COLORS = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE'],
+                   ColorGenerator.COLORS['GREEN'],  ColorGenerator.COLORS['CYAN'], ColorGenerator.COLORS['SALMON'],  
+                   ColorGenerator.COLORS['PURPLE'], ColorGenerator.COLORS['YELLOW'], ColorGenerator.COLORS['PINK']] * (NB_CLASSES // 9 + 1)
+    
+    X_0 = [column_x[column_y == i][:, 0] for i in range(NB_CLASSES)]
+    X_1 = [column_x[column_y == i][:, 1] for i in range(NB_CLASSES)]
+
+    if column_x_test is not None:
+        assert column_y_test is not None, 'column_y_test must be provided if column_x_test is provided.'
+    if column_y_test is not None:
+        assert column_x_test is not None, 'column_x_test must be provided if column_y_test is provided.'
+
+    # Convert torch.Tensor to np.ndarray if necessary (with CPU conversion)
+    column_x      = column_x.cpu().numpy() if isinstance(column_x, torch.Tensor) else column_x
+    column_y      = column_y.cpu().numpy() if isinstance(column_y, torch.Tensor) else column_y
+    column_x_test = column_x_test.cpu().numpy() if column_x_test is not None and isinstance(column_x_test, torch.Tensor) else column_x_test
+    column_y_test = column_y_test.cpu().numpy() if column_y_test is not None and isinstance(column_y_test, torch.Tensor) else column_y_test
+    y_pred        = y_pred.cpu().numpy() if y_pred is not None and isinstance(y_pred, torch.Tensor) else y_pred
+
+    colors     = kwargs.pop('color', [LIST_COLORS[i] for i in range(NB_CLASSES)])
+    colors    += LIST_COLORS if len(colors) < NB_CLASSES else []
+    color_test = kwargs.pop('color_test', [ColorGenerator.adjust_color(color, -0.2) for color in colors])
+    color_pred = kwargs.pop('color_pred', 'auto')
+    
+    edgefactor = kwargs.pop('edgefactor', 0.5)
+
+    def get_edgecolors(edgecolor: str, kwargs: Dict[str, Any]) -> Tuple[str, str]:
+        if edgecolor in kwargs:
+            edgecolor = kwargs.pop(edgecolor)
+            if isinstance(edgecolor, tuple) and len(edgecolor) == NB_CLASSES:
+                return edgecolor
+            else:
+                return [edgecolor] * NB_CLASSES
+        else:
+            return [adjust_color(color, edgefactor) for color in colors]
+        
+    edgecolor = get_edgecolors('edgecolor', kwargs)
+    edgecolor_test = get_edgecolors('edgecolor_test', kwargs)
+
+    axgridx                    = kwargs.pop('axgridx', True)
+    axgridy                    = kwargs.pop('axgridy', True)
+    color_spine                = kwargs.pop('color_spine', 'black')
+    color_tick                 = kwargs.pop('color_tick', 'black')
+    color_grid                 = kwargs.pop('color_grid', 'lightgrey')
+    label_class                = kwargs.pop('label_class', [f'Class {i}' for i in range(NB_CLASSES)])
+    title                      = kwargs.pop('title', f'Multi Class Classification' if NB_CLASSES > 2 else f'Binary Classification')
+    filepath                   = kwargs.pop('filepath', None)
+    legend_facecolor           = kwargs.pop('legend_facecolor', 'white')
+    legend_edgecolor           = kwargs.pop('legend_edgecolor', 'grey')
+    legend_framealpha          = kwargs.pop('legend_framealpha', 0.5)
+    marker                     = kwargs.pop('marker', 'o')
+    marker_test                = kwargs.pop('marker_test', 'x')
+    marker_pred                = kwargs.pop('marker_pred', '^')
+    alpha                      = kwargs.pop('alpha', 0.7)
+    alpha_test                 = kwargs.pop('alpha_test', alpha)
+    alpha_pred                 = kwargs.pop('alpha_pred', 0.95)
+    alpha_contourf             = kwargs.pop('alpha_contour', 0.2)
+    fraction                   = kwargs.pop('fraction', 1.)
+    fraction_test              = kwargs.pop('fraction_test', 1.)
+    decision_boundary          = kwargs.pop('decision_boundary', False)
+    model                      = kwargs.pop('model', None)
+
+    if decision_boundary and model is None:
+        warnings.warn('model must be provided if decision_boundary is True. Decision boundary will not be plotted.')
+
+    if 'contour_width' in kwargs and not decision_boundary:
+        warnings.warn('Decision boundary is not enabled. contour_width will not be used.')
+    contour_width = kwargs.pop('contour_width', 0.5)
+    
+    if 'contour_resolution' in kwargs and not decision_boundary:
+        warnings.warn('Decision boundary is not enabled. contour_resolution will not be used.')
+    contour_resolution = kwargs.pop('contour_resolution', 0.05)
+
+    if 'contour_color' in kwargs and not decision_boundary:
+        warnings.warn('Decision boundary is not enabled. contour_color will not be used.')
+    contour_color = kwargs.pop('contour_color', 'black')
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+    
+    plt.title(title, fontweight='bold')
+
+    name_label = label_class 
+
+    if column_x_test is not None and column_y_test is not None:
+        X_0_test = [column_x_test[column_y_test == i][:, 0] for i in range(NB_CLASSES)]
+        X_1_test = [column_x_test[column_y_test == i][:, 1] for i in range(NB_CLASSES)]
+
+        warnings.filterwarnings("ignore", message="You passed a edgecolor/edgecolors*")
+
+        if fraction_test < 1.0:
+            X_0_test = [X_0_test[i][:int(fraction_test * len(X_0_test[i]))] for i in range(NB_CLASSES)]
+            X_1_test = [X_1_test[i][:int(fraction_test * len(X_1_test[i]))] for i in range(NB_CLASSES)]
+    
+        for i in range(NB_CLASSES):
+            ax.scatter(X_0_test[i], X_1_test[i], c=color_test[i], edgecolors=edgecolor_test[i], marker=marker_test, alpha=alpha_test, label=f'{name_label[i]} Test', **kwargs)
+
+        name_label = [f'{name_label[i]} Train' for i in range(NB_CLASSES)]
+
+    if fraction < 1.0:
+        X_0 = [X_0[i][:int(fraction * len(X_0[i]))] for i in range(NB_CLASSES)]
+        X_1 = [X_1[i][:int(fraction * len(X_1[i]))] for i in range(NB_CLASSES)]
+
+    for i in range(NB_CLASSES):
+        ax.scatter(X_0[i], X_1[i], c=colors[i], edgecolors=edgecolor[i], marker=marker, alpha=alpha, label=name_label[i], **kwargs)
+
+    if y_pred is not None:
+        for i in range(len(y_pred)):
+            if y_pred[i] != column_y_test[i]:
+                color_pred_select = color_test[int(column_y_test[i])] if color_pred == 'auto' else color_pred
+                edgecolor_pred_select = color_test[int(y_pred[i])]
+                
+                plt.scatter(column_x_test[i, 0], column_x_test[i, 1], 
+                            label= f'Misclassified {int(y_pred[i])} as {int(column_y_test[i])}', 
+                            color=color_pred_select, linewidths=2.2, edgecolor=edgecolor_pred_select, 
+                            marker=marker_pred, s=200, alpha=alpha_pred, **kwargs)
+    
+    if decision_boundary and model:
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, contour_resolution), np.arange(y_min, y_max, contour_resolution))
+        grid_tensor = torch.tensor(np.c_[xx.ravel(), yy.ravel()], dtype=torch.float32)
+        with torch.inference_mode():
+            Z = model(grid_tensor)
+            Z = torch.argmax(Z, dim=1).numpy()
+            Z = Z.reshape(xx.shape)
+
+        colors_rgb = [mcolors.hex2color(color) for color in colors]
+        cmap = mcolors.LinearSegmentedColormap.from_list('CustomMap', colors_rgb, N=len(colors))
+        ax.contourf(xx, yy, Z, alpha=alpha_contourf, cmap=cmap)
+        ax.contour(xx, yy, Z, colors=contour_color, linewidths=contour_width)
+
+    # Keep only unique legend
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha)
+
+    if filepath:
+        save_plot(filepath)
+
+
+def plot_temporal_serie(df: pd.DataFrame, 
+                        column_to_plot: str, 
+                        column_timestamp: str, 
+                        day: str = None,
+                        highlights: Union[List[Tuple[str, str, Tuple[float, float]]], 
+                                          List[Tuple[str, str, List[float]]]]  = None,
+                        scatter_max: bool = False,
+                        scatter_min: bool = False,
+                        filepath=None, 
+                        **kwargs) -> None:
+    """
+    Plot a temporal serie of a specified column in a DataFrame with customizable options.
+
+    Parameters:
+    -----------
+    df (pd.DataFrame):
+        The DataFrame containing the data.
+    
+    column_to_plot (str):
+        The name of the column to plot.
+
+    column_timestamp (str):
+        The name of the column containing the timestamp.
+
+    day (str, optional):
+        The day to plot. Defaults to None.
+
+    highlights (List[Tuple[str, str, Tuple[float, float]]] or 
+                List[Tuple[str, str, List[float]]], optional):
+        A list of tuples containing the label, color, and values to highlight. Defaults to None.
+        If the values are a tuple, the first and second values will be used as the beginning and
+        end of the highlight, respectively. If the values are a list, the minimum and maximum.
+
+    scatter_max (bool, optional):
+        If True, plot a scatter plot with the maximum value highlighted. Defaults to False.
+
+    scatter_min (bool, optional):
+        If True, plot a scatter plot with the minimum value highlighted. Defaults to False.
+
+    filepath (str, optional):
+        The file path to save the plot as an image. If provided, the figure will be saved as a PNG file.
+        Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., alpha, edgecolor, bins, color, etc.).
+
+    Returns:    
+    --------
+    None
+
+    This function plots a temporal serie for the specified column in the DataFrame. It provides options
+    to customize the appearance of the plot, such as figure figsize, colors, and transparency. If a file
+    path is provided, the plot will be saved as an image in PNG format.
+
+    Examples:
+    ---------
+    >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
+                            highlights=[('Sports', ColorGenerator.COLORS['BLUE'], (17, 18)), ('Exam', ColorGenerator.COLORS['RED'], (13, 15))], 
+                            scatter_max=True, scatter_min=True, color= ColorGenerator.COLORS['BLUE'], linewidth=2)
+    >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
+                            highlights=[('EVA', ColorGenerator.COLORS['PURPLE'], [6, 6.1, 6.2, 6.3, ..., 8])], 
+                            scatter_max=True, scatter_min=True)
+    """
+    df[column_timestamp] = pd.to_datetime(df[column_timestamp])
+
+    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == parser.parse(day).date()]
+    time = df_day[column_timestamp].dt.hour + df_day[column_timestamp].dt.minute / 60
+
+    plt.plot(time, df_day[column_to_plot], **kwargs) if 'color' in kwargs else plt.plot(time, df_day[column_to_plot], c=ColorGenerator.COLORS['BLUE'], **kwargs)
+
+    if highlights:
+        for label, color, values in highlights:
+            if len(values) == 0:
+                continue
+            beg, end = (values[0], values[1]) if type(values) == tuple else (min(values), max(values))
+            plt.axvspan(beg, end, color=color, alpha=0.3, label=label)
+        plt.legend()
+
+    if scatter_max:
+        scatter_color = ColorGenerator.COLORS['RED'] if  kwargs.get('color') != ColorGenerator.COLORS['RED'] else ColorGenerator.COLORS['BLUE']
+        max_value = df_day[column_to_plot].max()
+        max_index = df_day[column_to_plot].idxmax()
+        plt.scatter(time[max_index], max_value, c=scatter_color, s=30, marker='o')
+        plt.text(time[max_index] + 0.35, max_value, f'{max_value:.0f}', color=scatter_color, fontweight='bold')
+
+    if scatter_min:
+        scatter_color = ColorGenerator.COLORS['BLUE'] if  kwargs.get('color') != ColorGenerator.COLORS['BLUE'] else ColorGenerator.COLORS['GREEN']
+        min_value = df_day[column_to_plot].min()
+        min_index = df_day[column_to_plot].idxmin()
+        plt.scatter(time[min_index], min_value, c=scatter_color, s=30, marker='o')
+        plt.text(time[min_index] + 0.35, min_value, f'{min_value:.0f}', color=scatter_color, fontstyle='italic')
+
+    column_to_plot_name = column_to_plot.replace('_', ' ').title()
+
+    plt.title(f'{column_to_plot_name} vs Time', fontweight='bold')
+    plt.xlabel('Time (hours)', fontweight='bold')
+    plt.ylabel(f'{column_to_plot_name}', fontweight='bold')
+
+    plt.xticks(np.arange(0, 24, 1), rotation=45)
+
+    plt.grid(True)
+
+    if filepath:
+        save_plot(filepath)
+
+    plt.show()
+
+
+
+def get_extremum_from_temporal_serie(df: pd.DataFrame,
+                                     column_to_get_extremum: str,
+                                     column_timestamp: str,
+                                     day: str = None,
+                                     max: bool = True) -> Tuple[Union[int, float], List[pd.Timestamp]]:
+    
+    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
+
+    extremum_value = df_day[column_to_get_extremum].max() if max else df_day[column_to_get_extremum].min()
+    extremum_timestamps = df_day.loc[df_day[column_to_get_extremum] == extremum_value, column_timestamp].tolist()
+
+    return extremum_value, extremum_timestamps
+
+def get_extremum_from_temporal_serie(df: pd.DataFrame,
+                                     column_to_get_extremum: str,
+                                     column_timestamp: str,
+                                     day: str = None,
+                                     max: bool = True) -> Tuple[Union[int, float], List[pd.Timestamp]]:
+    
+    """
+    Get the maximum or minimum value and timestamps from a specified column in a DataFrame.
+    
+    Parameters:
+    -----------
+    df (pd.DataFrame):
+        The DataFrame containing the data.
+    
+    column_to_get_extremum (str):
+        The name of the column to get the extremum.
+    
+    column_timestamp (str):
+        The name of the column containing the timestamp.
+    
+    day (str, optional):
+        The day to plot. Defaults to None.
+        
+    max (bool, optional):
+        If True, get the maximum value and timestamps, if False, get the minimum value and timestamps. Defaults to True.
+    
+    Returns:
+    --------
+    Tuple[Union[int, float], List[pd.Timestamp]]:
+        A tuple containing the maximum or minimum value and the corresponding timestamps.
+        
+    Examples:
+    ---------
+    >>> get_extremum_from_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', max=True)
+    """
+    
+    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
+
+    extremum_value = df_day[column_to_get_extremum].max() if max else df_day[column_to_get_extremum].min()
+    extremum_timestamps = df_day.loc[df_day[column_to_get_extremum] == extremum_value, column_timestamp].tolist()
+
+    return extremum_value, extremum_timestamps
+
+
+def get_timestamps_above_threshold(df: pd.DataFrame,
+                                   column_to_check: str,
+                                   column_timestamp: str,
+                                   day: str = None,
+                                   threshold: Union[int, float] = 0.0) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
+    
+    """
+    Get the timestamps where a specified column is above a specified threshold.
+    
+    Parameters:
+    -----------
+    df (pd.DataFrame):
+        The DataFrame containing the data.
+    
+    column_to_check (str):
+        The name of the column to check.
+        
+    column_timestamp (str):
+        The name of the column containing the timestamp.
+        
+    day (str, optional):
+        The day to plot. Defaults to None.
+    
+    threshold (Union[int, float], optional):
+        The threshold. Defaults to 0.0.
+        
+    Returns:
+    --------
+    List[Tuple[pd.Timestamp, pd.Timestamp]]:
+        A list of tuples containing the start and end timestamps where the column is above the threshold.
+        
+    Examples:
+    ---------
+    >>> get_timestamps_above_threshold(df, 'heart_rate', 'timestamp', day='2021-01-01', threshold=100)
+    """
+    
+    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
+
+    timestamps_above_threshold = []
+
+    start_timestamp = None
+    end_timestamp = None
+
+    for index, row in df_day.iterrows():
+        if row[column_to_check] > threshold:
+            if start_timestamp is None:
+                start_timestamp = row[column_timestamp]
+        else:
+            if start_timestamp is not None:
+                end_timestamp = row[column_timestamp]
+                timestamps_above_threshold.append((start_timestamp, end_timestamp))
+                start_timestamp = None
+                end_timestamp = None
+
+    if start_timestamp is not None:
+        end_timestamp = df_day.iloc[-1][column_timestamp]
+        timestamps_above_threshold.append((start_timestamp, end_timestamp))
+
+    return timestamps_above_threshold
+
+
+def plot_losses(ax: plt.Axes,
+                training_loss: List[int],
+                test_loss: List[int] = None,
+                **kwargs) -> None:
+    
+    """
+    Plot the training and test losses.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The Axes object to plot the data.
+
+    training_loss (List[int]):
+        The training loss.
+
+    test_loss (List[int], optional):
+        The test loss. Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, edgecolor, linewidth, etc.).
+
+    Returns:
+    --------
+    None
+
+    This function plots the training and test losses. It provides options to customize the appearance of the plot,
+    such as colors, line width, and transparency.
+
+    """
+
+    n_epochs = len(training_loss)
+
+    color = kwargs.pop('color', ColorGenerator.COLORS['CYAN'])
+    color_test = kwargs.pop('color_test', ColorGenerator.COLORS['SALMON'])
+
+    axgridx                    = kwargs.pop('axgridx', True)
+    axgridy                    = kwargs.pop('axgridy', True)
+    color_spine                = kwargs.pop('color_spine', 'black')
+    color_tick                 = kwargs.pop('color_tick', 'black')
+    color_grid                 = kwargs.pop('color_grid', 'lightgrey')
+    dataset_name               = kwargs.pop('dataset_name', None)
+    title                      = kwargs.pop('title', ('Training and Test Loss' if test_loss else 'Training Loss') + (f' of dataset: {dataset_name}' if dataset_name else ''))
+    filepath                   = kwargs.pop('filepath', None)
+    legend_facecolor           = kwargs.pop('legend_facecolor', 'white')
+    legend_edgecolor           = kwargs.pop('legend_edgecolor', 'grey')
+    legend_framealpha          = kwargs.pop('legend_framealpha', 0.5)
+    y_log                      = kwargs.pop('y_log', False)
+    min_loss                   = kwargs.pop('min_loss', True)
+    min_loss_test              = kwargs.pop('min_loss_test', True)
+
+    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
+                          color_spine=color_spine, color_tick=color_tick)
+    
+    plt.title(title, fontweight='bold')
+    plt.xlabel('Epoch', fontweight='bold')
+    plt.ylabel('Loss' + (' (Log Scale)' if y_log else ''), fontweight='bold')
+
+    if y_log:
+        plt.yscale('log')
+    
+    plt.plot(range(1, n_epochs + 1), training_loss, color=color, label='Training Loss', **kwargs)
+    if min_loss:
+        min_loss_index = np.argmin(training_loss)
+        plt.scatter(min_loss_index + 1, training_loss[min_loss_index], c=color, s=50, marker='o')
+    if test_loss:
+        plt.plot(range(1, n_epochs + 1), test_loss, color=color_test, label='Test Loss', **kwargs)
+        if min_loss_test:
+            min_loss_test_index = np.argmin(test_loss)
+            plt.axvline(min_loss_test_index + 1, color=color_test, linestyle='--', **kwargs)
+            plt.scatter(min_loss_test_index + 1, test_loss[min_loss_test_index], c=color_test, s=50, marker='o')
+            # Add the epoch with the minimum test loss within the plot (at the top next to the line)
+            plt.text(min_loss_test_index + n_epochs * 0.01, test_loss[min_loss_test_index] + max(test_loss) * 0.05, f'{min_loss_test_index + 1}', color=color_test, fontweight='bold', fontsize=10)
+
+    plt.legend(facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha)
+
+    if filepath:
+        save_plot(filepath)
+
+
+
+def plot_confusion_matrix_heatmap(ax: plt.Axes,
+                                  y_true: Union[np.ndarray, torch.Tensor],
+                                  y_pred: Union[np.ndarray, torch.Tensor],
+                                  target_names: List[str] = None,
+                                  **kwargs) -> np.ndarray:
+    
+    """
+    Plot a confusion matrix heatmap.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    y_true (np.ndarray, torch.Tensor):
+        The true labels.
+
+    y_pred (np.ndarray, torch.Tensor):
+        The predicted labels.
+
+    target_names (List[str], optional):
+        The names of the target classes. Defaults to None.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    np.ndarray:
+        The confusion matrix.
+
+    This function plots a confusion matrix heatmap.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+
+    Examples:
+    ---------
+    >>> plot_confusion_matrix_heatmap(ax, y_true, y_pred, target_names=['A', 'B', 'C'], color='Blues', alpha=0.8, linewidth=0.1)
+    """
+    
+    if isinstance(y_true, torch.Tensor):
+        y_true = y_true.cpu().numpy()
+    if isinstance(y_pred, torch.Tensor):
+        y_pred = y_pred.cpu().numpy()
+
+    cm = confusion_matrix(y_true, y_pred)
+
+    if target_names is None:
+        target_names = np.unique(y_true)
+
+    params = {'title': 'Confusion Matrix', 'x_label_title': 'Predicted', 'y_label_title': 'Actual', 'labels': None, 
+              'border': True, 'add_value_annot': False, 'set_edgecolor': False, 'customize_plot_colors': False}
+    params = {**DEFAULT_PARAMETER, **params}
+
+    adjust_kwargs(kwargs, params, False, True, True, True, True, True)
+    adjust_graph_color(params)
+
+    
+    sns.heatmap(cm, annot=True, fmt='d', 
+                xticklabels=target_names, 
+                yticklabels=target_names,
+                clip_on = False
+                **kwargs)
+    
+    final_graph_customization(ax, params, kwargs)
+
+    if params['border']:
+        print('in')
+        ax.axhline(y=0, color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axhline(y=cm.shape[1], color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axvline(x=0, color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axvline(x=cm.shape[0], color='k',linewidth=1.8*kwargs['linewidth'])
+
+    save_plot(params['filepath'])
+
+    return cm
+
+def plot_correlation_matrix_heatmap(ax: plt.Axes,
+                                    dataframe: pd.DataFrame,
+                                    **kwargs) -> pd.DataFrame:
+    
+    """
+    Plot a correlation matrix heatmap.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    dataframe (pd.DataFrame):
+        The DataFrame containing the data.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., color, alpha, etc.).
+
+    Returns:
+    --------
+    pd.DataFrame:
+        The correlation matrix.
+
+    This function plots a correlation matrix heatmap.
+    If a file path is provided, the plot will be saved as an image in PNG format.
+
+    Examples:
+    ---------
+    >>> plot_correlation_matrix_heatmap(ax, df, color='coolwarm', alpha=0.8, linewidth=0.1)
+    """
+    corr = dataframe.corr()
+    
+    params = {'title': 'Correlation Matrix', 'x_label_title': 'Features', 'y_label_title': 'Features',
+              'border': True, 'add_value_annot': False, 'set_edgecolor': False, 'customize_plot_colors': False}
+    params = {**DEFAULT_PARAMETER, **params}
+
+    adjust_kwargs(kwargs, params, False, True, True, True, True, True)
+    adjust_graph_color(params)
+        
+    sns.heatmap(corr, annot=True, fmt='.2f', **kwargs)
+
+    final_graph_customization(ax, params, kwargs)
+
+    if params['border']:
+        ax.axhline(y=0, color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axhline(y=corr.shape[1], color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axvline(x=0, color='k',linewidth=1.8*kwargs['linewidth'])
+        ax.axvline(x=corr.shape[0], color='k',linewidth=1.8*kwargs['linewidth'])
+
+    save_plot(params['filepath'])
+
+    return corr
+
+
+
+
 def categorize_column(df: pd.DataFrame,
                       column: str,
                       int_bins: list,
@@ -905,6 +1619,7 @@ def categorize_column(df: pd.DataFrame,
     # Return the modified DataFrame if inplace is False
     if not inplace:
         return df
+    
     
 
 def plot_PCA(df: pd.DataFrame,
@@ -1221,864 +1936,3 @@ def create_gif_from_3D_PCA(df: pd.DataFrame,
 
     ani = FuncAnimation(fig, update, frames=range(0, 360, speed), interval=40)
     ani.save(filepath, writer='pillow', fps=80)
-
-
-def plot_feature_importance(ax: plt.Axes,
-                            features: pd.Index,
-                            importances: np.ndarray, 
-                            **kwargs) -> Dict[str, float]:
-    """
-    Plot feature importances.
-
-    Parameters:
-    -----------
-    ax (plt.Axes):
-        The plot's axes.
-
-    features (pd.Index):
-        The features (columns) corresponding to the importances.
-    
-    importances (np.ndarray):
-        Feature importances obtained from a Random Forest classifier.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., color, alpha, etc.).
-
-    Returns:
-    --------
-    Dict[str, float]:
-        A dictionary containing features and their corresponding importances.
-
-    This function plots the feature importances.
-    If a file path is provided, the plot will be saved as an image in PNG format.
-    """
-    
-    df_importance = pd.DataFrame({'Features': features, 
-                                  'Importances': importances})
-        
-    df_importance.sort_values(by='Importances', ascending=False, inplace=True)
-    
-    get_colors(len(df_importance), kwargs)
-    get_edgecolors(0.5, kwargs)
-
-    color = kwargs['color'] if isinstance(kwargs['color'], str) else kwargs['color'][0]
-
-    axgridx      = kwargs.pop('axgridx', True)
-    axgridy      = kwargs.pop('axgridy', False)
-    color_label  = kwargs.pop('color_label', ColorGenerator.adjust_color(color , 0.3))
-    color_spine  = kwargs.pop('color_spine', ColorGenerator.adjust_color(color , 0.45))
-    color_tick   = kwargs.pop('color_tick', ColorGenerator.adjust_color(color, 0.45))
-    color_grid   = kwargs.pop('color_grid', ColorGenerator.adjust_color(color, -0.4))
-    bold_max     = kwargs.pop('bold_max', True)
-    italic_min   = kwargs.pop('italic_min', True)
-    title_before = kwargs.pop('title_before', '')
-    title_after  = kwargs.pop('title_after', '')
-    title        = kwargs.pop('title', 'Features importances')
-    to_dict      = kwargs.pop('to_dict', False)
-    filepath     = kwargs.pop('filepath', None)
-
-    sns.barplot(y='Features', x='Importances', 
-                data=df_importance, palette=kwargs.pop('color'), 
-                hue='Importances', legend=False, **kwargs)
-    
-    plt.title(title_before + title + title_after, fontweight='bold')
-    plt.xlabel('Importances', color=color_label, fontweight='bold')
-    plt.ylabel('Features', color=color_label, fontweight='bold')
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-    
-    if bold_max:
-        max_index = np.argmax(df_importance['Importances'])
-        y_labels = ax.get_yticklabels()
-        y_labels[max_index].set_weight('bold')
-
-    if italic_min:
-        min_index = np.argmin(df_importance['Importances'])
-        y_labels = ax.get_yticklabels()
-        y_labels[min_index].set_style('italic')
-
-
-    if filepath:
-        save_plot(filepath)
-
-    return df_importance.transpose().to_dict() if to_dict else df_importance.transpose()
-
-
-
-def plot_temporal_serie(df: pd.DataFrame, 
-                        column_to_plot: str, 
-                        column_timestamp: str, 
-                        day: str = None,
-                        highlights: Union[List[Tuple[str, str, Tuple[float, float]]], 
-                                          List[Tuple[str, str, List[float]]]]  = None,
-                        scatter_max: bool = False,
-                        scatter_min: bool = False,
-                        filepath=None, 
-                        **kwargs) -> None:
-    """
-    Plot a temporal serie of a specified column in a DataFrame with customizable options.
-
-    Parameters:
-    -----------
-    df (pd.DataFrame):
-        The DataFrame containing the data.
-    
-    column_to_plot (str):
-        The name of the column to plot.
-
-    column_timestamp (str):
-        The name of the column containing the timestamp.
-
-    day (str, optional):
-        The day to plot. Defaults to None.
-
-    highlights (List[Tuple[str, str, Tuple[float, float]]] or 
-                List[Tuple[str, str, List[float]]], optional):
-        A list of tuples containing the label, color, and values to highlight. Defaults to None.
-        If the values are a tuple, the first and second values will be used as the beginning and
-        end of the highlight, respectively. If the values are a list, the minimum and maximum.
-
-    scatter_max (bool, optional):
-        If True, plot a scatter plot with the maximum value highlighted. Defaults to False.
-
-    scatter_min (bool, optional):
-        If True, plot a scatter plot with the minimum value highlighted. Defaults to False.
-
-    filepath (str, optional):
-        The file path to save the plot as an image. If provided, the figure will be saved as a PNG file.
-        Defaults to None.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., alpha, edgecolor, bins, color, etc.).
-
-    Returns:    
-    --------
-    None
-
-    This function plots a temporal serie for the specified column in the DataFrame. It provides options
-    to customize the appearance of the plot, such as figure figsize, colors, and transparency. If a file
-    path is provided, the plot will be saved as an image in PNG format.
-
-    Examples:
-    ---------
-    >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
-                            highlights=[('Sports', ColorGenerator.COLORS['BLUE'], (17, 18)), ('Exam', ColorGenerator.COLORS['RED'], (13, 15))], 
-                            scatter_max=True, scatter_min=True, color= ColorGenerator.COLORS['BLUE'], linewidth=2)
-    >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
-                            highlights=[('EVA', ColorGenerator.COLORS['PURPLE'], [6, 6.1, 6.2, 6.3, ..., 8])], 
-                            scatter_max=True, scatter_min=True)
-    """
-    df[column_timestamp] = pd.to_datetime(df[column_timestamp])
-
-    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == parser.parse(day).date()]
-    time = df_day[column_timestamp].dt.hour + df_day[column_timestamp].dt.minute / 60
-
-    plt.plot(time, df_day[column_to_plot], **kwargs) if 'color' in kwargs else plt.plot(time, df_day[column_to_plot], c=ColorGenerator.COLORS['BLUE'], **kwargs)
-
-    if highlights:
-        for label, color, values in highlights:
-            if len(values) == 0:
-                continue
-            beg, end = (values[0], values[1]) if type(values) == tuple else (min(values), max(values))
-            plt.axvspan(beg, end, color=color, alpha=0.3, label=label)
-        plt.legend()
-
-    if scatter_max:
-        scatter_color = ColorGenerator.COLORS['RED'] if  kwargs.get('color') != ColorGenerator.COLORS['RED'] else ColorGenerator.COLORS['BLUE']
-        max_value = df_day[column_to_plot].max()
-        max_index = df_day[column_to_plot].idxmax()
-        plt.scatter(time[max_index], max_value, c=scatter_color, s=30, marker='o')
-        plt.text(time[max_index] + 0.35, max_value, f'{max_value:.0f}', color=scatter_color, fontweight='bold')
-
-    if scatter_min:
-        scatter_color = ColorGenerator.COLORS['BLUE'] if  kwargs.get('color') != ColorGenerator.COLORS['BLUE'] else ColorGenerator.COLORS['GREEN']
-        min_value = df_day[column_to_plot].min()
-        min_index = df_day[column_to_plot].idxmin()
-        plt.scatter(time[min_index], min_value, c=scatter_color, s=30, marker='o')
-        plt.text(time[min_index] + 0.35, min_value, f'{min_value:.0f}', color=scatter_color, fontstyle='italic')
-
-    column_to_plot_name = column_to_plot.replace('_', ' ').title()
-
-    plt.title(f'{column_to_plot_name} vs Time', fontweight='bold')
-    plt.xlabel('Time (hours)', fontweight='bold')
-    plt.ylabel(f'{column_to_plot_name}', fontweight='bold')
-
-    plt.xticks(np.arange(0, 24, 1), rotation=45)
-
-    plt.grid(True)
-
-    if filepath:
-        save_plot(filepath)
-
-    plt.show()
-
-
-
-def get_extremum_from_temporal_serie(df: pd.DataFrame,
-                                     column_to_get_extremum: str,
-                                     column_timestamp: str,
-                                     day: str = None,
-                                     max: bool = True) -> Tuple[Union[int, float], List[pd.Timestamp]]:
-    
-    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
-
-    extremum_value = df_day[column_to_get_extremum].max() if max else df_day[column_to_get_extremum].min()
-    extremum_timestamps = df_day.loc[df_day[column_to_get_extremum] == extremum_value, column_timestamp].tolist()
-
-    return extremum_value, extremum_timestamps
-
-def get_extremum_from_temporal_serie(df: pd.DataFrame,
-                                     column_to_get_extremum: str,
-                                     column_timestamp: str,
-                                     day: str = None,
-                                     max: bool = True) -> Tuple[Union[int, float], List[pd.Timestamp]]:
-    
-    """
-    Get the maximum or minimum value and timestamps from a specified column in a DataFrame.
-    
-    Parameters:
-    -----------
-    df (pd.DataFrame):
-        The DataFrame containing the data.
-    
-    column_to_get_extremum (str):
-        The name of the column to get the extremum.
-    
-    column_timestamp (str):
-        The name of the column containing the timestamp.
-    
-    day (str, optional):
-        The day to plot. Defaults to None.
-        
-    max (bool, optional):
-        If True, get the maximum value and timestamps, if False, get the minimum value and timestamps. Defaults to True.
-    
-    Returns:
-    --------
-    Tuple[Union[int, float], List[pd.Timestamp]]:
-        A tuple containing the maximum or minimum value and the corresponding timestamps.
-        
-    Examples:
-    ---------
-    >>> get_extremum_from_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', max=True)
-    """
-    
-    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
-
-    extremum_value = df_day[column_to_get_extremum].max() if max else df_day[column_to_get_extremum].min()
-    extremum_timestamps = df_day.loc[df_day[column_to_get_extremum] == extremum_value, column_timestamp].tolist()
-
-    return extremum_value, extremum_timestamps
-
-
-def get_timestamps_above_threshold(df: pd.DataFrame,
-                                   column_to_check: str,
-                                   column_timestamp: str,
-                                   day: str = None,
-                                   threshold: Union[int, float] = 0.0) -> List[Tuple[pd.Timestamp, pd.Timestamp]]:
-    
-    """
-    Get the timestamps where a specified column is above a specified threshold.
-    
-    Parameters:
-    -----------
-    df (pd.DataFrame):
-        The DataFrame containing the data.
-    
-    column_to_check (str):
-        The name of the column to check.
-        
-    column_timestamp (str):
-        The name of the column containing the timestamp.
-        
-    day (str, optional):
-        The day to plot. Defaults to None.
-    
-    threshold (Union[int, float], optional):
-        The threshold. Defaults to 0.0.
-        
-    Returns:
-    --------
-    List[Tuple[pd.Timestamp, pd.Timestamp]]:
-        A list of tuples containing the start and end timestamps where the column is above the threshold.
-        
-    Examples:
-    ---------
-    >>> get_timestamps_above_threshold(df, 'heart_rate', 'timestamp', day='2021-01-01', threshold=100)
-    """
-    
-    df_day = df.copy() if not day else df[df[column_timestamp].dt.date == pd.to_datetime(day).date()]
-
-    timestamps_above_threshold = []
-
-    start_timestamp = None
-    end_timestamp = None
-
-    for index, row in df_day.iterrows():
-        if row[column_to_check] > threshold:
-            if start_timestamp is None:
-                start_timestamp = row[column_timestamp]
-        else:
-            if start_timestamp is not None:
-                end_timestamp = row[column_timestamp]
-                timestamps_above_threshold.append((start_timestamp, end_timestamp))
-                start_timestamp = None
-                end_timestamp = None
-
-    if start_timestamp is not None:
-        end_timestamp = df_day.iloc[-1][column_timestamp]
-        timestamps_above_threshold.append((start_timestamp, end_timestamp))
-
-    return timestamps_above_threshold
-
-def plot_classification(ax: plt.Axes,
-                        column_x: Union[np.ndarray, torch.Tensor],
-                        column_y: Union[np.ndarray, torch.Tensor],
-                        column_x_test: Union[np.ndarray, torch.Tensor] = None,
-                        column_y_test: Union[np.ndarray, torch.Tensor] = None,
-                        y_pred: Union[np.ndarray, torch.Tensor] = None,
-                        **kwargs) -> None:
-    
-    """
-    Plot a classification of two columns with customizable options.
-
-    Parameters:
-    -----------
-    ax (plt.Axes):
-        The Axes object to plot the data.
-
-    column_x (Union[np.ndarray, torch.Tensor]):
-        The values of the first column.
-
-    column_y (Union[np.ndarray, torch.Tensor]):
-        The values of the second column.
-
-    column_x_test (Union[np.ndarray, torch.Tensor], optional):
-        The values of the first column for the test set. Defaults to None.
-
-    column_y_test (Union[np.ndarray, torch.Tensor], optional):
-        The values of the second column for the test set. Defaults to None.
-
-    y_pred (Union[np.ndarray, torch.Tensor], optional):
-        The predicted values. Defaults to None.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., color, edgecolor, marker, alpha, etc.).
-
-    Returns:
-    --------
-    None
-
-    This function plots a binary classification of two columns in a DataFrame with customizable options.
-    If the test set is provided, it plots the test set as well. If the predicted values are provided, it plots
-    the predicted values. The plot can be customized with additional keyword arguments.
-
-    Examples:
-    ---------
-    >>> plot_classification(column_x, column_y, ax, 
-                                   column_x_test, column_y_test, 
-                                   y_pred, color=('blue', 'red'), color_test=('cyan', 'salmon'), color_pred='auto',
-                                   edgecolor='black', label_class=('Class 1', 'Class 2'), title='Binary Classification',
-                                   marker='o', marker_test='x', marker_pred='^', 
-                                   alpha=0.7, alpha_pred=0.8, fraction=0.8, fraction_test=0.95)
-    """
-
-    NB_CLASSES = len(np.unique(column_y))
-    LIST_COLORS = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE'],
-                   ColorGenerator.COLORS['GREEN'],  ColorGenerator.COLORS['CYAN'], ColorGenerator.COLORS['SALMON'],  
-                   ColorGenerator.COLORS['PURPLE'], ColorGenerator.COLORS['YELLOW'], ColorGenerator.COLORS['PINK']] * (NB_CLASSES // 9 + 1)
-    
-    X_0 = [column_x[column_y == i][:, 0] for i in range(NB_CLASSES)]
-    X_1 = [column_x[column_y == i][:, 1] for i in range(NB_CLASSES)]
-
-    if column_x_test is not None:
-        assert column_y_test is not None, 'column_y_test must be provided if column_x_test is provided.'
-    if column_y_test is not None:
-        assert column_x_test is not None, 'column_x_test must be provided if column_y_test is provided.'
-
-    # Convert torch.Tensor to np.ndarray if necessary (with CPU conversion)
-    column_x      = column_x.cpu().numpy() if isinstance(column_x, torch.Tensor) else column_x
-    column_y      = column_y.cpu().numpy() if isinstance(column_y, torch.Tensor) else column_y
-    column_x_test = column_x_test.cpu().numpy() if column_x_test is not None and isinstance(column_x_test, torch.Tensor) else column_x_test
-    column_y_test = column_y_test.cpu().numpy() if column_y_test is not None and isinstance(column_y_test, torch.Tensor) else column_y_test
-    y_pred        = y_pred.cpu().numpy() if y_pred is not None and isinstance(y_pred, torch.Tensor) else y_pred
-
-    colors     = kwargs.pop('color', [LIST_COLORS[i] for i in range(NB_CLASSES)])
-    colors    += LIST_COLORS if len(colors) < NB_CLASSES else []
-    color_test = kwargs.pop('color_test', [ColorGenerator.adjust_color(color, -0.2) for color in colors])
-    color_pred = kwargs.pop('color_pred', 'auto')
-    
-    edgefactor = kwargs.pop('edgefactor', 0.5)
-
-    def get_edgecolors(edgecolor: str, kwargs: Dict[str, Any]) -> Tuple[str, str]:
-        if edgecolor in kwargs:
-            edgecolor = kwargs.pop(edgecolor)
-            if isinstance(edgecolor, tuple) and len(edgecolor) == NB_CLASSES:
-                return edgecolor
-            else:
-                return [edgecolor] * NB_CLASSES
-        else:
-            return [adjust_color(color, edgefactor) for color in colors]
-        
-    edgecolor = get_edgecolors('edgecolor', kwargs)
-    edgecolor_test = get_edgecolors('edgecolor_test', kwargs)
-
-    axgridx                    = kwargs.pop('axgridx', True)
-    axgridy                    = kwargs.pop('axgridy', True)
-    color_spine                = kwargs.pop('color_spine', 'black')
-    color_tick                 = kwargs.pop('color_tick', 'black')
-    color_grid                 = kwargs.pop('color_grid', 'lightgrey')
-    label_class                = kwargs.pop('label_class', [f'Class {i}' for i in range(NB_CLASSES)])
-    title                      = kwargs.pop('title', f'Multi Class Classification' if NB_CLASSES > 2 else f'Binary Classification')
-    filepath                   = kwargs.pop('filepath', None)
-    legend_facecolor           = kwargs.pop('legend_facecolor', 'white')
-    legend_edgecolor           = kwargs.pop('legend_edgecolor', 'grey')
-    legend_framealpha          = kwargs.pop('legend_framealpha', 0.5)
-    marker                     = kwargs.pop('marker', 'o')
-    marker_test                = kwargs.pop('marker_test', 'x')
-    marker_pred                = kwargs.pop('marker_pred', '^')
-    alpha                      = kwargs.pop('alpha', 0.7)
-    alpha_test                 = kwargs.pop('alpha_test', alpha)
-    alpha_pred                 = kwargs.pop('alpha_pred', 0.95)
-    alpha_contourf             = kwargs.pop('alpha_contour', 0.2)
-    fraction                   = kwargs.pop('fraction', 1.)
-    fraction_test              = kwargs.pop('fraction_test', 1.)
-    decision_boundary          = kwargs.pop('decision_boundary', False)
-    model                      = kwargs.pop('model', None)
-
-    if decision_boundary and model is None:
-        warnings.warn('model must be provided if decision_boundary is True. Decision boundary will not be plotted.')
-
-    if 'contour_width' in kwargs and not decision_boundary:
-        warnings.warn('Decision boundary is not enabled. contour_width will not be used.')
-    contour_width = kwargs.pop('contour_width', 0.5)
-    
-    if 'contour_resolution' in kwargs and not decision_boundary:
-        warnings.warn('Decision boundary is not enabled. contour_resolution will not be used.')
-    contour_resolution = kwargs.pop('contour_resolution', 0.05)
-
-    if 'contour_color' in kwargs and not decision_boundary:
-        warnings.warn('Decision boundary is not enabled. contour_color will not be used.')
-    contour_color = kwargs.pop('contour_color', 'black')
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-    
-    plt.title(title, fontweight='bold')
-
-    name_label = label_class 
-
-    if column_x_test is not None and column_y_test is not None:
-        X_0_test = [column_x_test[column_y_test == i][:, 0] for i in range(NB_CLASSES)]
-        X_1_test = [column_x_test[column_y_test == i][:, 1] for i in range(NB_CLASSES)]
-
-        warnings.filterwarnings("ignore", message="You passed a edgecolor/edgecolors*")
-
-        if fraction_test < 1.0:
-            X_0_test = [X_0_test[i][:int(fraction_test * len(X_0_test[i]))] for i in range(NB_CLASSES)]
-            X_1_test = [X_1_test[i][:int(fraction_test * len(X_1_test[i]))] for i in range(NB_CLASSES)]
-    
-        for i in range(NB_CLASSES):
-            ax.scatter(X_0_test[i], X_1_test[i], c=color_test[i], edgecolors=edgecolor_test[i], marker=marker_test, alpha=alpha_test, label=f'{name_label[i]} Test', **kwargs)
-
-        name_label = [f'{name_label[i]} Train' for i in range(NB_CLASSES)]
-
-    if fraction < 1.0:
-        X_0 = [X_0[i][:int(fraction * len(X_0[i]))] for i in range(NB_CLASSES)]
-        X_1 = [X_1[i][:int(fraction * len(X_1[i]))] for i in range(NB_CLASSES)]
-
-    for i in range(NB_CLASSES):
-        ax.scatter(X_0[i], X_1[i], c=colors[i], edgecolors=edgecolor[i], marker=marker, alpha=alpha, label=name_label[i], **kwargs)
-
-    if y_pred is not None:
-        for i in range(len(y_pred)):
-            if y_pred[i] != column_y_test[i]:
-                color_pred_select = color_test[int(column_y_test[i])] if color_pred == 'auto' else color_pred
-                edgecolor_pred_select = color_test[int(y_pred[i])]
-                
-                plt.scatter(column_x_test[i, 0], column_x_test[i, 1], 
-                            label= f'Misclassified {int(y_pred[i])} as {int(column_y_test[i])}', 
-                            color=color_pred_select, linewidths=2.2, edgecolor=edgecolor_pred_select, 
-                            marker=marker_pred, s=200, alpha=alpha_pred, **kwargs)
-    
-    if decision_boundary and model:
-        x_min, x_max = ax.get_xlim()
-        y_min, y_max = ax.get_ylim()
-        xx, yy = np.meshgrid(np.arange(x_min, x_max, contour_resolution), np.arange(y_min, y_max, contour_resolution))
-        grid_tensor = torch.tensor(np.c_[xx.ravel(), yy.ravel()], dtype=torch.float32)
-        with torch.inference_mode():
-            Z = model(grid_tensor)
-            Z = torch.argmax(Z, dim=1).numpy()
-            Z = Z.reshape(xx.shape)
-
-        colors_rgb = [mcolors.hex2color(color) for color in colors]
-        cmap = mcolors.LinearSegmentedColormap.from_list('CustomMap', colors_rgb, N=len(colors))
-        ax.contourf(xx, yy, Z, alpha=alpha_contourf, cmap=cmap)
-        ax.contour(xx, yy, Z, colors=contour_color, linewidths=contour_width)
-
-    # Keep only unique legend
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys(), facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha)
-
-    if filepath:
-        save_plot(filepath)
-
-
-def plot_losses(ax: plt.Axes,
-                training_loss: List[int],
-                test_loss: List[int] = None,
-                **kwargs) -> None:
-    
-    """
-    Plot the training and test losses.
-
-    Parameters:
-    -----------
-    ax (plt.Axes):
-        The Axes object to plot the data.
-
-    training_loss (List[int]):
-        The training loss.
-
-    test_loss (List[int], optional):
-        The test loss. Defaults to None.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., color, edgecolor, linewidth, etc.).
-
-    Returns:
-    --------
-    None
-
-    This function plots the training and test losses. It provides options to customize the appearance of the plot,
-    such as colors, line width, and transparency.
-
-    """
-
-    n_epochs = len(training_loss)
-
-    color = kwargs.pop('color', ColorGenerator.COLORS['CYAN'])
-    color_test = kwargs.pop('color_test', ColorGenerator.COLORS['SALMON'])
-
-    axgridx                    = kwargs.pop('axgridx', True)
-    axgridy                    = kwargs.pop('axgridy', True)
-    color_spine                = kwargs.pop('color_spine', 'black')
-    color_tick                 = kwargs.pop('color_tick', 'black')
-    color_grid                 = kwargs.pop('color_grid', 'lightgrey')
-    dataset_name               = kwargs.pop('dataset_name', None)
-    title                      = kwargs.pop('title', ('Training and Test Loss' if test_loss else 'Training Loss') + (f' of dataset: {dataset_name}' if dataset_name else ''))
-    filepath                   = kwargs.pop('filepath', None)
-    legend_facecolor           = kwargs.pop('legend_facecolor', 'white')
-    legend_edgecolor           = kwargs.pop('legend_edgecolor', 'grey')
-    legend_framealpha          = kwargs.pop('legend_framealpha', 0.5)
-    y_log                      = kwargs.pop('y_log', False)
-    min_loss                   = kwargs.pop('min_loss', True)
-    min_loss_test              = kwargs.pop('min_loss_test', True)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-    
-    plt.title(title, fontweight='bold')
-    plt.xlabel('Epoch', fontweight='bold')
-    plt.ylabel('Loss' + (' (Log Scale)' if y_log else ''), fontweight='bold')
-
-    if y_log:
-        plt.yscale('log')
-    
-    plt.plot(range(1, n_epochs + 1), training_loss, color=color, label='Training Loss', **kwargs)
-    if min_loss:
-        min_loss_index = np.argmin(training_loss)
-        plt.scatter(min_loss_index + 1, training_loss[min_loss_index], c=color, s=50, marker='o')
-    if test_loss:
-        plt.plot(range(1, n_epochs + 1), test_loss, color=color_test, label='Test Loss', **kwargs)
-        if min_loss_test:
-            min_loss_test_index = np.argmin(test_loss)
-            plt.axvline(min_loss_test_index + 1, color=color_test, linestyle='--', **kwargs)
-            plt.scatter(min_loss_test_index + 1, test_loss[min_loss_test_index], c=color_test, s=50, marker='o')
-            # Add the epoch with the minimum test loss within the plot (at the top next to the line)
-            plt.text(min_loss_test_index + n_epochs * 0.01, test_loss[min_loss_test_index] + max(test_loss) * 0.05, f'{min_loss_test_index + 1}', color=color_test, fontweight='bold', fontsize=10)
-
-    plt.legend(facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha)
-
-    if filepath:
-        save_plot(filepath)
-
-
-# def plot_groupby(ax: plt.Axes,
-#                  dataframe: pd.DataFrame, 
-#                  group: str,
-#                  target: str,
-#                  frequency: bool = False,
-#                  **kwargs) -> pd.DataFrame:
-    
-#     """
-#     Plot the distribution of a group and target column in a DataFrame.
-
-#     Parameters:
-#     -----------
-#     ax (plt.Axes):
-#         The Axes object to plot the data.
-
-#     dataframe (pd.DataFrame):
-#         The DataFrame containing the data.
-
-#     group (str):
-#         The name of the column to group by.
-
-#     target (str):
-#         The name of the target column.
-
-#     frequency (bool, optional):
-#         If True, get the frequency distribution. If False (default), get the population distribution.
-
-#     **kwargs:
-#         Additional keyword arguments for customization (e.g., color, edgecolor, linewidth, etc.).
-
-#     Returns:
-#     --------
-#     pd.DataFrame:
-#         A DataFrame containing the distribution of the group and target columns.
-
-#     This function plots the distribution of a group and target column in a DataFrame. It provides options to customize
-#     the appearance of the plot, such as colors, edge color, and line width.
-    
-#     Examples:
-#     ---------
-#     >>> plot_groupby(ax, df, 'category', 'target', frequency=True, color='viridis', edgecolor='black', linewidth=1.5)
-#     >>> plot_groupby(ax, df, 'category', 'target', frequency=False, color=['red', 'cyan', 'orange'], edgecolor='auto', linewidth=1.5, title_before='Train ')
-#     """
-    
-#     result = dataframe.groupby([group, target]).size().unstack()
-#     result = result.reset_index().rename(columns={'index': group})
-
-#     columns_to_sum = [col for col in result.columns if col not in [group, target]]
-#     df = result.copy()
-
-#     df['Total'] = df[columns_to_sum].sum(axis=1)
-
-#     if frequency:
-#         for i in range(df.shape[0]):
-#             for col in columns_to_sum:
-#                 percentage = df.loc[i, col] / df.loc[i, 'Total'] * 100
-#                 df.loc[i, col] = percentage
-
-#     style = True if kwargs.pop('style', 'bar').lower() == 'multibar' else False
-
-#     if style:
-#         result = pd.melt(result, id_vars=group, var_name=target, value_name='Population')
-
-#     graphcolor = kwargs.pop('graph_color', '#000000')
-
-#     if 'color' not in kwargs:
-#         kwargs['color'] = 'inferno'
-#     get_colors(len(df.columns) - 2, kwargs)
-#     edgecolor_chosen = kwargs.pop('edgecolor', 'auto')
-
-#     axgridx           = kwargs.pop('axgridx', False)
-#     axgridy           = kwargs.pop('axgridy', True)
-#     color_label       = kwargs.pop('color_label', ColorGenerator.adjust_color(graphcolor, 0.3))
-#     color_spine       = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-#     color_tick        = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-#     color_grid        = kwargs.pop('color_grid', ColorGenerator.adjust_color(graphcolor, -0.4))
-#     legend_facecolor  = kwargs.pop('legend_facecolor', 'white')
-#     legend_edgecolor  = kwargs.pop('legend_edgecolor', 'grey')
-#     legend_framealpha = kwargs.pop('legend_framealpha', 0.5)
-#     percentage_annot  = kwargs.pop('percentage_annot', 18)
-#     title             = kwargs.pop('title', f'Distribution of {group.capitalize()} and {target.capitalize()}')
-#     title_before      = kwargs.pop('title_before', '')
-#     title_after       = kwargs.pop('title_after', '')
-#     filepath          = kwargs.pop('filepath', None)
-
-#     kwargs['linewidth'] = kwargs.get('linewidth', 1.8)
-#     kwargs['alpha'] = kwargs.get('alpha', 0.9)
-
-#     customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-#                           color_spine=color_spine, color_tick=color_tick)
-
-
-#     if style:
-#         sns.barplot(data=result, x=group, 
-#                     y='Population', palette=kwargs.pop('color'), 
-#                     hue=target, dodge=True, saturation=0.75, **kwargs)
-
-#         for i, patch in enumerate(ax.patches):
-#             edgecolor = edgecolor_chosen if edgecolor_chosen != 'auto' else ColorGenerator.adjust_color(patch.get_facecolor(), 0.5)
-#             patch.set_edgecolor(edgecolor)
-
-#         add_value_labels(ax, '#000000', frequency=frequency, percentage=percentage_annot)
-        
-
-#     else:
-#         col = kwargs.pop('color')
-#         for _, row in df.iterrows():
-#             bottom = 0
-#             for i, category in enumerate(df.columns[1:-1]):
-#                 plt.bar(row[group], row[category], bottom=bottom, label=category, color=col[i], **kwargs)
-#                 bottom += row[category]
-
-#         plt.ylim(0, max(df['Total']) * 1.06)
-
-        
-
-#     plt.title(title_before + title + title_after, fontweight='bold')
-#     plt.xlabel(group.capitalize(), color=color_label, fontsize=11)
-#     plt.ylabel('Population')
-
-#     handles, labels = plt.gca().get_legend_handles_labels()
-#     by_label = dict(zip(labels, handles))
-#     plt.legend(by_label.values(), by_label.keys(), facecolor=legend_facecolor, edgecolor=legend_edgecolor, framealpha=legend_framealpha, title=target)
-#     plt.tight_layout()
-
-#     if filepath:
-#         save_plot(filepath)
-
-#     return df
-
-def plot_confusion_matrix_heatmap(ax: plt.Axes,
-                                  y_true: Union[np.ndarray, torch.Tensor],
-                                  y_pred: Union[np.ndarray, torch.Tensor],
-                                  target_names: List[str] = None,
-                                  **kwargs) -> np.ndarray:
-    
-    """
-    Plot a confusion matrix heatmap.
-
-    Parameters:
-    -----------
-    ax (plt.Axes):
-        The plot's axes.
-
-    y_true (np.ndarray, torch.Tensor):
-        The true labels.
-
-    y_pred (np.ndarray, torch.Tensor):
-        The predicted labels.
-
-    target_names (List[str], optional):
-        The names of the target classes. Defaults to None.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., color, alpha, etc.).
-
-    Returns:
-    --------
-    np.ndarray:
-        The confusion matrix.
-
-    This function plots a confusion matrix heatmap.
-    If a file path is provided, the plot will be saved as an image in PNG format.
-
-    Examples:
-    ---------
-    >>> plot_confusion_matrix_heatmap(ax, y_true, y_pred, target_names=['A', 'B', 'C'], color='Blues', alpha=0.8, linewidth=0.1)
-    """
-    
-    if isinstance(y_true, torch.Tensor):
-        y_true = y_true.cpu().numpy()
-    if isinstance(y_pred, torch.Tensor):
-        y_pred = y_pred.cpu().numpy()
-
-    cm = confusion_matrix(y_true, y_pred)
-
-    if target_names is None:
-        target_names = np.unique(y_true)
-
-    graphcolor = kwargs.pop('graph_color', '#000000')
-
-    axgridx           = kwargs.pop('axgridx', False)
-    axgridy           = kwargs.pop('axgridy', False)
-    color_spine       = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_tick        = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_grid        = kwargs.pop('color_grid', None)
-    title_before      = kwargs.pop('title_before', '')
-    title_after    = kwargs.pop('title_after', '')
-    title             = kwargs.pop('title', 'Confusion Matrix')
-    filepath          = kwargs.pop('filepath', None)
-
-    kwargs['linewidth'] = kwargs.get('linewidth', 0.1)
-    kwargs['linecolor'] = kwargs.get('linecolor', 'black')
-    kwargs['alpha']     = kwargs.get('alpha', 0.9)
-    kwargs['cmap']      = kwargs.get('cmap', 'Blues')
-    kwargs['cbar']      = kwargs.get('cbar', False)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-    
-    sns.heatmap(cm, annot=True, fmt='d', 
-                xticklabels=target_names, 
-                yticklabels=target_names, 
-                **kwargs)
-    
-    plt.title(title_before + title + title_after, fontweight='bold')
-    plt.xlabel('Predicted', fontweight='bold')
-    plt.ylabel('Actual', fontweight='bold')
-
-    if filepath:
-        save_plot(filepath)
-
-    return cm
-
-def plot_correlation_matrix_heatmap(ax: plt.Axes,
-                                    dataframe: pd.DataFrame,
-                                    **kwargs) -> pd.DataFrame:
-    
-    """
-    Plot a correlation matrix heatmap.
-
-    Parameters:
-    -----------
-    ax (plt.Axes):
-        The plot's axes.
-
-    dataframe (pd.DataFrame):
-        The DataFrame containing the data.
-
-    **kwargs:
-        Additional keyword arguments for customization (e.g., color, alpha, etc.).
-
-    Returns:
-    --------
-    pd.DataFrame:
-        The correlation matrix.
-
-    This function plots a correlation matrix heatmap.
-    If a file path is provided, the plot will be saved as an image in PNG format.
-
-    Examples:
-    ---------
-    >>> plot_correlation_matrix_heatmap(ax, df, color='coolwarm', alpha=0.8, linewidth=0.1)
-    """
-    
-    graphcolor = kwargs.pop('graph_color', '#000000')
-
-    axgridx           = kwargs.pop('axgridx', False)
-    axgridy           = kwargs.pop('axgridy', False)
-    color_spine       = kwargs.pop('color_spine', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_tick        = kwargs.pop('color_tick', ColorGenerator.adjust_color(graphcolor, 0.45))
-    color_grid        = kwargs.pop('color_grid', None)
-    title_before      = kwargs.pop('title_before', '')
-    title_after       = kwargs.pop('title_after', '')
-    title             = kwargs.pop('title', 'Correlation Matrix')
-    filepath          = kwargs.pop('filepath', None)
-
-    kwargs['linewidth'] = kwargs.get('linewidth', 0.1)
-    kwargs['linecolor'] = kwargs.get('linecolor', 'black')
-    kwargs['alpha']     = kwargs.get('alpha', 0.9)
-    kwargs['cmap']      = kwargs.get('cmap', 'coolwarm')
-    kwargs['cbar']      = kwargs.get('cbar', False)
-
-    customize_plot_colors(ax, axgridx=axgridx, axgridy=axgridy, color_grid=color_grid,
-                          color_spine=color_spine, color_tick=color_tick)
-    
-    corr = dataframe.corr()
-    
-    sns.heatmap(corr, annot=True, fmt='.2f', **kwargs)
-    
-    plt.title(title_before + title + title_after, fontweight='bold')
-
-    if filepath:
-        save_plot(filepath)
-
-    return corr
