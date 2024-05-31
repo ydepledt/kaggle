@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 from sklearn.preprocessing import MinMaxScaler
@@ -17,6 +18,7 @@ from matplotlib import colormaps
 
 from typing import Any, Dict, List, Tuple, Union
 
+
 DEFAULT_PARAMETER = {
     'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True,
     'title': '', 'title_before': '', 'title_after': '', 'percentage_annot': 8,
@@ -27,33 +29,10 @@ DEFAULT_PARAMETER = {
     'xticks_sep': 'auto', 'yticks_sep': 'auto', 'set_edgecolor': True,
     'color_label': 'auto', 'color_spine': 'auto', 'color_tick': 'auto', 'color_grid': 'auto',
     'color_annot': 'auto', 'annot_fontsize': 8, 'color_annot': 'matching', 'add_value_annot': True,
-    'customize_plot_colors': True
+    'customize_plot_colors': True, 'outside_annot': False, 'edgefactor': 0.6, 'color_multibar': ('deepskyblue', 'blueviolet')
 }
 
 class ColorGenerator:
-    COLORS = {
-        'BLUE': '#3D6FFF',
-        'RED': '#FF3D3D',
-        'ORANGE': '#FF8E35',
-        'PURPLE': '#BB58FF',
-        'GREEN': '#32CD32',
-        'YELLOW': '#F9DB00',
-        'PINK': '#FFC0CB',
-        'BROWN': '#8B4513',
-        'CYAN': '#00FFFF',
-        'SALMON': '#FA8072',
-        'LAVENDER': '#E6E6FA',
-        'KHAKI': '#F0E68C',
-        'TURQUOISE': '#40E0D0',
-        'GOLD': '#FFD700',
-        'SILVER': '#C0C0C0',
-        'CORAL': '#FF7F50',
-        'INDIGO': '#4B0082',
-        'OLIVE': '#808000',
-        'TEAL': '#008080',
-        'NAVY': '#000080',
-    }
-
     @staticmethod
     def get_random_color() -> str:
         """
@@ -82,26 +61,6 @@ class ColorGenerator:
             A list of n random colors in hexadecimal format.
         """
         return [ColorGenerator.get_random_color() for _ in range(n)]
-
-    @staticmethod
-    def get_random_colors_from_dict(n: int, colors: Dict[str, str] = COLORS) -> List[str]:
-        """
-        Get a list of n random colors from a dictionary of color names and values.
-
-        Parameters:
-        -----------
-        n (int):
-            The number of random colors to generate.
-
-        colors (Dict[str, str], optional):
-            A dictionary of color names and values. Defaults to COLORS.
-
-        Returns:
-        --------
-        List[str]:
-            A list of n random colors in hexadecimal format.
-        """
-        return [colors[color] for color in np.random.choice(list(colors.keys()), n, replace=False)]
 
     @staticmethod
     def adjust_color(color: str, factor: float = 0.5) -> str:
@@ -147,16 +106,15 @@ class ColorGenerator:
         return hex_color
 
 
+
 def get_colors(size: int, 
                kwargs: Dict[str, Any],
-               base_color: str = ColorGenerator.COLORS['BLUE']) -> None:
+               base_color: str = 'dodgerblue') -> None:
     
     if 'color' not in kwargs:
         kwargs['color'] = [base_color] * size
     elif kwargs['color'] == 'random':
-        kwargs['color'] = ColorGenerator().get_random_colors_from_dict(size)
-    elif kwargs['color'] == 'random2':
-        kwargs['color'] = ColorGenerator().get_random_colors_from_dict(size)
+        kwargs['color'] = ColorGenerator().get_random_colors(size)
     elif 'random' in kwargs['color'] and ('cmap' in kwargs['color'] or 'palette' in kwargs['color'] or 'colormap' in kwargs['color']):
         list_cmap = list(colormaps)
         cmap = np.random.choice(list_cmap)
@@ -165,7 +123,7 @@ def get_colors(size: int,
         kwargs['color'] = [kwargs['color']] * size
     elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != size:
         warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({size}). Adding default colors.")
-        kwargs['color'] += ColorGenerator().get_random_colors_from_dict(size - len(kwargs['color']))
+        kwargs['color'] += ColorGenerator().get_random_colors(size - len(kwargs['color']))
     elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == size:
         pass
     else:
@@ -182,17 +140,8 @@ def get_colors(size: int,
 
 
 def get_edgecolors(edgefactor: float,
-                   kwargs: Dict[str, Any]) -> Tuple[str, str]:
-        
-        colors = kwargs['color']
-        nb_colors = len(colors)
-
-        if 'edgecolor' in kwargs:
-            edgecolor = kwargs['edgecolor']
-            if not (isinstance(edgecolor, tuple) and len(edgecolor) == nb_colors):
-                kwargs['edgecolor'] = [edgecolor] * nb_colors
-        else:
-            kwargs['edgecolor'] = [ColorGenerator.adjust_color(color, edgefactor) for color in colors]
+                   params: Dict[str, Any]) -> Tuple[str, str]:
+    params['edgecolor'] = 'auto'
 
 
 
@@ -209,12 +158,13 @@ def adjust_graph_color(params: Dict[str, Any]) -> None:
     --------
     None
     """
-    params['color_label'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)  if params['color_label'] == 'auto' else params['color_label']
-    params['color_spine'] = ColorGenerator.adjust_color(params['graphcolor'], 0.45) if params['color_spine'] == 'auto' else params['color_spine']
-    params['color_tick']  = ColorGenerator.adjust_color(params['graphcolor'], 0.45) if params['color_tick'] == 'auto' else params['color_tick']
-    params['color_grid']  = ColorGenerator.adjust_color(params['graphcolor'], -0.4) if params['color_grid'] == 'auto' else params['color_grid']
-    params['color_annot'] = ColorGenerator.adjust_color(params['graphcolor'], 0.3)  if params['color_annot'] == 'auto' else params['color_annot']
+    adjust = lambda color, factor: ColorGenerator.adjust_color(color, factor) if color == 'auto' else color
 
+    params['color_label'] = adjust(params['color_label'], 0.3)
+    params['color_spine'] = adjust(params['graphcolor'], 0.45)
+    params['color_tick']  = adjust(params['graphcolor'], 0.45)
+    params['color_grid']  = adjust(params['graphcolor'], -0.4)
+    params['color_annot'] = adjust(params['graphcolor'], 0.3)
 
 
 def adjust_kwargs(kwargs: Dict[str, Any],
@@ -441,19 +391,22 @@ def final_graph_customization(ax: plt.Axes,
                          fontsize=params.get('annot_fontsize'),
                          frequency=params.get('frequency'), 
                          horizontal=params.get('horizontal'),
-                         percentage=params.get('percentage_annot'))
+                         percentage=params.get('percentage_annot'),
+                         outside=params.get('outside_annot'))
     
     if params.get('customize_plot_colors'):
         customize_plot_colors(ax, 
-                            axgridx=params.get('axgridx'), 
-                            axgridy=params.get('axgridy'), 
-                            color_grid=params.get('color_grid'),
-                            color_spine=params.get('color_spine'), 
-                            color_tick=params.get('color_tick'))
+                              axgridx=params.get('axgridx'), 
+                              axgridy=params.get('axgridy'), 
+                              color_grid=params.get('color_grid'),
+                              color_spine=params.get('color_spine'), 
+                              color_tick=params.get('color_tick'))
         
     if params.get('set_edgecolor'):
         for i, patch in enumerate(ax.patches):
-            patch.set_edgecolor(kwargs['edgecolor'][i])
+            if params['edgecolor'] == 'auto':
+                color_of_the_patch = patch.get_facecolor()
+                patch.set_edgecolor(ColorGenerator.adjust_color(color_of_the_patch, params['edgefactor']))
     
     plt.title(params['title_before'] + params['title'] + params['title_after'], fontsize=params['title_fontsize'], fontweight='bold')
     plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight=params['x_label_fontweight'])
@@ -519,18 +472,18 @@ def plot_missing_data(ax: plt.Axes,
     filtered_missing_info_df = missing_info_df[missing_info_df['Percentage Missing'] > 0]
 
     get_colors(len(filtered_missing_info_df), kwargs)
-    get_edgecolors(0.5, kwargs)
 
     params = {'title': 'Missing Data', 'x_label_title': 'Feature', 'y_label_title': 'Frequency', 'percentage': True}
     params = {**DEFAULT_PARAMETER, **params}
 
+    get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
     y_title = 'Percentage Missing' if params['frequency'] else 'Total Missing'
-    
+
     sns.barplot(y=y_title, 
                 x=filtered_missing_info_df.index, 
                 data=filtered_missing_info_df, 
@@ -605,11 +558,11 @@ def plot_groupby(ax: plt.Axes,
     })
 
     get_colors(len(df), kwargs)
-    get_edgecolors(0.5, kwargs)
 
     params = {'x_label_title': f'{group.capitalize()} Category'}
     params = {**DEFAULT_PARAMETER, **params}
 
+    get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
 
@@ -632,7 +585,7 @@ def plot_groupby(ax: plt.Axes,
 
 def plot_hist_discrete_feature(ax: plt.Axes,
                                dataframe: pd.DataFrame, 
-                               column: str,
+                               column: Union[str, List[str]],
                                **kwargs) -> pd.DataFrame:
     """
     Plot a histogram for a specified column in a DataFrame with customizable options.
@@ -670,32 +623,53 @@ def plot_hist_discrete_feature(ax: plt.Axes,
 
     dataframe_formated = kwargs.pop('dataframe_formated', False)
 
-    labels, counts = (np.unique(dataframe[column], return_counts=True) if not dataframe_formated else (dataframe[column].index, dataframe[column].values.ravel()))
-    percentages = counts / len(dataframe) * 100
-    
-    df_counts = pd.DataFrame({'Labels': labels, 
-                              'Counts': counts,
-                              'Percentages': percentages})
+    column = [column] if isinstance(column, str) else column
 
-    df_counts.sort_values(by='Counts', ascending=False, inplace=True)
+    nb_columns = len(column)
+
+    if not dataframe_formated:
+        labels, counts = np.unique(dataframe[column], return_counts=True)
+        percentages = counts / len(dataframe) * 100
+    else:
+        labels = dataframe[column].index
+        counts = [dataframe[col].values.ravel() for col in column]
+        percentages = [count / len(dataframe) * 100 for count in counts]
+
+    dict_df_count = {**{'Labels': labels}, 
+                     **{f'Counts {col}': count for col, count in zip(column, counts)}, 
+                     **{f'Percentages {col}': percentage for col, percentage in zip(column, percentages)}}
+
+    df_counts = pd.DataFrame(dict_df_count)
+
+    df_counts.sort_values(by=f'Counts {column[0]}', ascending=False, inplace=True)
+
+    columns_to_drop = [col for col in df_counts.columns if 'Percentage' in col]
+    df_melted = df_counts.drop(columns=columns_to_drop).melt(id_vars='Labels', var_name='Type', value_name='Counts')
 
     get_colors(len(labels), kwargs)
-    get_edgecolors(0.5, kwargs)
 
-    params = {'title': f'Distribution of {column.capitalize()}', 'x_label_title': column.capitalize()}
+    params = {'title': f'Distribution of {column[0].capitalize()}', 'x_label_title': column[0].capitalize()}
     params = {**DEFAULT_PARAMETER, **params}
 
+    get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
-    x_lab, y_lab = ('Percentages', 'Labels') if not params['horizontal'] else ('Labels', 'Percentages')
+    if nb_columns == 1:
+        y_tit = f'Percentage {column[0]}' if params['frequency'] else f'Counts {column[0]}' 
+    else:
+        y_tit = 'Counts'
+    x_lab, y_lab = (y_tit, 'Labels') if not params['horizontal'] else ('Labels', y_tit)
+
+    color = kwargs.pop('color') if nb_columns == 1 else params['color_multibar']
+
     sns.barplot(y=x_lab,
                 x=y_lab,
-                data=df_counts,
-                palette=kwargs.pop('color'),
-                hue='Labels',
+                data=df_counts if nb_columns == 1 else df_melted,
+                palette=color,
+                hue='Labels' if nb_columns == 1 else 'Type',
                 legend=False,
                 **kwargs)
 
@@ -705,6 +679,15 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
         
     final_graph_customization(ax, params, kwargs)
+
+    if nb_columns != 1:
+        labels = df_melted['Type'].unique()
+        handles = [mpatches.Patch(facecolor=params['color_multibar'][i], 
+                        edgecolor=ColorGenerator.adjust_color(params['color_multibar'][i], params['edgefactor']), 
+                        linewidth=1, 
+                        label=labels[i]) for i in range(len(labels))]
+        plt.legend(handles=handles, loc='center right')
+    
 
     save_plot(params['filepath'])
 
@@ -837,7 +820,7 @@ def plot_kde(ax: plt.Axes,
 
     if isinstance(dataframe, pd.DataFrame):
         dataframe = [dataframe]
-    color = kwargs.pop('color', ColorGenerator.COLORS['BLUE'])
+    color = kwargs.pop('color', 'dodgerblue')
 
     if group_column:
         for i, group in enumerate(dataframe[0][group_column].unique()):
@@ -892,12 +875,12 @@ def plot_feature_importance(ax: plt.Axes,
     df_importance.sort_values(by='Importances', ascending=False, inplace=True)
     
     get_colors(len(df_importance), kwargs)
-    get_edgecolors(0.5, kwargs)
 
     params = {'title': 'Features importances', 'x_label_title': 'Importances', 'y_label_title': 'Features',
               'to_dict': False, 'bold_max': True, 'italic_min': True, 'add_value_annot': False}
     params = {**DEFAULT_PARAMETER, **params}
 
+    get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
     adjust_graph_color(params)
 
@@ -976,9 +959,7 @@ def plot_classification(ax: plt.Axes,
     """
 
     NB_CLASSES = len(np.unique(column_y))
-    LIST_COLORS = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE'],
-                   ColorGenerator.COLORS['GREEN'],  ColorGenerator.COLORS['CYAN'], ColorGenerator.COLORS['SALMON'],  
-                   ColorGenerator.COLORS['PURPLE'], ColorGenerator.COLORS['YELLOW'], ColorGenerator.COLORS['PINK']] * (NB_CLASSES // 9 + 1)
+    LIST_COLORS = ['dodgerblue', 'salmon', 'darkorange', 'aquamarine',  'aqua', 'orchid', 'rebeccapurple', 'gold', 'deeppink'] * (NB_CLASSES // 9 + 1)
     
     X_0 = [column_x[column_y == i][:, 0] for i in range(NB_CLASSES)]
     X_1 = [column_x[column_y == i][:, 1] for i in range(NB_CLASSES)]
@@ -1174,10 +1155,10 @@ def plot_temporal_serie(df: pd.DataFrame,
     Examples:
     ---------
     >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
-                            highlights=[('Sports', ColorGenerator.COLORS['BLUE'], (17, 18)), ('Exam', ColorGenerator.COLORS['RED'], (13, 15))], 
-                            scatter_max=True, scatter_min=True, color= ColorGenerator.COLORS['BLUE'], linewidth=2)
+                            highlights=[('Sports', 'dodgerblue', (17, 18)), ('Exam', 'tomato', (13, 15))], 
+                            scatter_max=True, scatter_min=True, color= 'dodgerblue', linewidth=2)
     >>> plot_temporal_serie(df, 'heart_rate', 'timestamp', day='2021-01-01', 
-                            highlights=[('EVA', ColorGenerator.COLORS['PURPLE'], [6, 6.1, 6.2, 6.3, ..., 8])], 
+                            highlights=[('EVA', 'mediumorchid', [6, 6.1, 6.2, 6.3, ..., 8])], 
                             scatter_max=True, scatter_min=True)
     """
     df[column_timestamp] = pd.to_datetime(df[column_timestamp])
@@ -1185,7 +1166,7 @@ def plot_temporal_serie(df: pd.DataFrame,
     df_day = df.copy() if not day else df[df[column_timestamp].dt.date == parser.parse(day).date()]
     time = df_day[column_timestamp].dt.hour + df_day[column_timestamp].dt.minute / 60
 
-    plt.plot(time, df_day[column_to_plot], **kwargs) if 'color' in kwargs else plt.plot(time, df_day[column_to_plot], c=ColorGenerator.COLORS['BLUE'], **kwargs)
+    plt.plot(time, df_day[column_to_plot], **kwargs) if 'color' in kwargs else plt.plot(time, df_day[column_to_plot], c='dodgerblue', **kwargs)
 
     if highlights:
         for label, color, values in highlights:
@@ -1196,14 +1177,14 @@ def plot_temporal_serie(df: pd.DataFrame,
         plt.legend()
 
     if scatter_max:
-        scatter_color = ColorGenerator.COLORS['RED'] if  kwargs.get('color') != ColorGenerator.COLORS['RED'] else ColorGenerator.COLORS['BLUE']
+        scatter_color = 'tomato' if  kwargs.get('color') != 'tomato' else 'dodgerblue'
         max_value = df_day[column_to_plot].max()
         max_index = df_day[column_to_plot].idxmax()
         plt.scatter(time[max_index], max_value, c=scatter_color, s=30, marker='o')
         plt.text(time[max_index] + 0.35, max_value, f'{max_value:.0f}', color=scatter_color, fontweight='bold')
 
     if scatter_min:
-        scatter_color = ColorGenerator.COLORS['BLUE'] if  kwargs.get('color') != ColorGenerator.COLORS['BLUE'] else ColorGenerator.COLORS['GREEN']
+        scatter_color = 'dodgerblue' if  kwargs.get('color') != 'dodgerblue' else 'springgreen'
         min_value = df_day[column_to_plot].min()
         min_index = df_day[column_to_plot].idxmin()
         plt.scatter(time[min_index], min_value, c=scatter_color, s=30, marker='o')
@@ -1377,8 +1358,8 @@ def plot_losses(ax: plt.Axes,
 
     n_epochs = len(training_loss)
 
-    color = kwargs.pop('color', ColorGenerator.COLORS['CYAN'])
-    color_test = kwargs.pop('color_test', ColorGenerator.COLORS['SALMON'])
+    color = kwargs.pop('color', 'cyan')
+    color_test = kwargs.pop('color_test', 'salmon')
 
     axgridx                    = kwargs.pop('axgridx', True)
     axgridy                    = kwargs.pop('axgridy', True)
@@ -1691,7 +1672,7 @@ def plot_PCA(df: pd.DataFrame,
         name_column1, name_column2 = f'PC{components[0]}', f'PC{components[1]}'
         if categorial_column:
             categories = df_pca[categorial_column].unique()
-            colors = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE']] if categorial_column else None
+            colors = ['dodgerblue', 'tomato', 'navajowhite'] if categorial_column else None
 
             for category, color in zip(categories, colors):
                 subset = df_pca[df_pca[categorial_column] == category]
@@ -1713,7 +1694,7 @@ def plot_PCA(df: pd.DataFrame,
 
         if categorial_column:
             categories = df_pca[categorial_column].unique()
-            colors = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE']] if categorial_column else None
+            colors = ['dodgerblue', 'tomato', 'navajowhite'] if categorial_column else None
 
             for category, color in zip(categories, colors):
                 subset = df_pca[df_pca[categorial_column] == category]
@@ -1914,7 +1895,7 @@ def create_gif_from_3D_PCA(df: pd.DataFrame,
 
     if categorial_column:
         categories = df_pca[categorial_column].unique()
-        colors = [ColorGenerator.COLORS['BLUE'], ColorGenerator.COLORS['RED'], ColorGenerator.COLORS['ORANGE']] if categorial_column else None
+        colors = ['dodgerblue', 'tomato', 'navajowhite'] if categorial_column else None
 
         for category, color in zip(categories, colors):
             subset = df_pca[df_pca[categorial_column] == category]
