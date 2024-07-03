@@ -20,16 +20,68 @@ from typing import Any, Dict, List, Tuple, Union
 
 
 DEFAULT_PARAMETER = {
-    'graphcolor': '#000000', 'rotation': 0, 'axgridx': False, 'axgridy': True,
-    'title': '', 'title_before': '', 'title_after': '', 'percentage_annot': 8,
-    'frequency': False, 'filepath': None, 'title_fontsize': 14, 'title_fontweight': 'bold',
-    'x_label_fontsize': 11, 'x_label_fontweight': None, 'y_label_fontsize': 11,
-    'y_label_fontweight': None, 'add_value_annot': True, 'x_ticks_shorten': None,
-    'y_ticks_shorten': None, 'x_label_title': '', 'y_label_title': '', 'horizontal': False,
-    'xticks_sep': 'auto', 'yticks_sep': 'auto', 'set_edgecolor': True,
-    'color_label': 'auto', 'color_spine': 'auto', 'color_tick': 'auto', 'color_grid': 'auto',
-    'color_annot': 'auto', 'annot_fontsize': 8, 'color_annot': 'matching', 'add_value_annot': True,
-    'customize_plot_colors': True, 'outside_annot': False, 'edgefactor': 0.6, 'color_multibar': ('deepskyblue', 'blueviolet')
+    # General appearance
+    'graphcolor': '#000000',
+    'rotation': 0,
+    'horizontal': False,
+    'startangle': 0,
+    'size_circle_pie': 0.75,
+    'linewidth': 0,
+    
+    # Title settings
+    'title': '',
+    'title_before': '',
+    'title_after': '',
+    'title_fontsize': 14,
+    'title_bold': True,
+    'title_italic': False,
+
+    # Axis labels
+    'x_label_title': '',
+    'y_label_title': '',
+    'x_label_fontsize': 11,
+    'y_label_fontsize': 11,
+    'x_label_bold': True,
+    'y_label_bold': True,
+    'x_label_italic': False,
+    'y_label_italic': False,
+
+    # Ticks settings
+    'x_ticks_shorten': None,
+    'y_ticks_shorten': None,
+    'xticks_sep': 'auto',
+    'yticks_sep': 'auto',
+
+    # Grid settings
+    'axgridx': False,
+    'axgridy': True,
+    'linestylex': '--',
+    'linestyley': '--',
+
+    # Colors settings
+    'set_edgecolor': True,
+    'customize_plot_colors': True,
+    'edgefactor': 0.6,
+    'color_label': 'auto',
+    'color_spine': 'auto',
+    'color_tick': 'auto',
+    'color_grid': 'auto',
+    'color_annot': 'matching',
+    'color_multibar': ('deepskyblue', 'blueviolet'),
+
+    # Annotations settings
+    'add_value_annot': True,
+    'annot_percentage': 8,
+    'annot_fontsize': 8,
+    'annot_outside': False,
+    'annot_bold': True,
+    'annot_italic': False,
+    'annot_0': False,
+
+    # Other settings
+    'frequency': False,
+    'filepath': None,
+    'labels': None
 }
 
 class ColorGenerator:
@@ -110,29 +162,66 @@ class ColorGenerator:
 def get_colors(size: int, 
                kwargs: Dict[str, Any],
                base_color: str = 'dodgerblue') -> None:
+    """
+    Get a list of colors based on the specified keyword arguments.
+
+    Parameters:
+    -----------
+    size (int):
+        The number of colors to generate.
+
+    kwargs (Dict[str, Any]):
+        The dictionary of keyword arguments.
+
+    base_color (str, optional):
+        The base color to use when generating colors. Defaults to 'dodgerblue'.
+
+    Returns:
+    --------
+    None
+
+    Examples:
+    ---------
+    >>> get_colors(5, {'color': 'random'})
+    >>> get_colors(5, {'color': 'random_cmap'})
+    >>> get_colors(5, {'color': 'Blues'})
+    >>> get_colors(5, {'color': 'blue'})
+    >>> get_colors(5, {'color': '#FF0000'})
+    >>> get_colors(5, {'color': ['red', 'blue', 'green']})
+    """
     
+    # Base color
     if 'color' not in kwargs:
         kwargs['color'] = [base_color] * size
+    # Random color
     elif kwargs['color'] == 'random':
         kwargs['color'] = ColorGenerator().get_random_colors(size)
+    # Random colormap
     elif 'random' in kwargs['color'] and ('cmap' in kwargs['color'] or 'palette' in kwargs['color'] or 'colormap' in kwargs['color']):
         list_cmap = list(colormaps)
         cmap = np.random.choice(list_cmap)
         kwargs['color'] = sns.color_palette(cmap, size)
+    # Single hex color to multiple colors
     elif isinstance(kwargs['color'], str) and '#' in kwargs['color']:
         kwargs['color'] = [kwargs['color']] * size
+    # Colors list (not enough colors) -> add default colors
     elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) != size:
         warnings.warn(f"Number of colors provided ({len(kwargs['color'])}) does not match the number of unique values ({size}). Adding default colors.")
         kwargs['color'] += ColorGenerator().get_random_colors(size - len(kwargs['color']))
+    # Colors list (enough colors)
     elif isinstance(kwargs['color'], (list, tuple)) and len(kwargs['color']) == size:
         pass
+    # Color name or hex code
     else:
+        # Palette name
         try:
             kwargs['color'] = sns.color_palette(kwargs['color'], size)
         except ValueError:
+            # Matplotlib color name
             try:
                 color_hex = webcolors.name_to_hex(kwargs['color'])
                 kwargs['color'] = [color_hex] * size
+            # Invalid color name or hex code -> use default color
             except ValueError:
                 warnings.warn(f"Color '{kwargs['color']}' is not a valid color name or hex code. Using default color.")
                 kwargs['color'] = [base_color] * size
@@ -145,7 +234,12 @@ def get_edgecolors(edgefactor: float,
 
 
 
-def adjust_graph_color(params: Dict[str, Any]) -> None:
+def adjust_graph_color(params: Dict[str, Any],
+                       factors: Dict[str, float] = {'color_label': 0.3, 
+                                                    'color_spine': 0.45, 
+                                                    'color_tick': 0.45, 
+                                                    'color_grid': -0.4, 
+                                                    'color_annot': 0.3}) -> None:
     """
     Adjust the color of the plot's spines, ticks, and grid.
 
@@ -154,17 +248,21 @@ def adjust_graph_color(params: Dict[str, Any]) -> None:
     params (Dict[str, Any]):
         The dictionary of keyword arguments.
 
+    factors (Dict[str, float], optional):
+        The factors by which to adjust the colors. Defaults to {'color_label': 0.3, 'color_spine': 0.45, 'color_tick': 0.45, 'color_grid': -0.4, 'color_annot': 0.3}.
+
     Returns:
     --------
     None
     """
-    adjust = lambda color, factor: ColorGenerator.adjust_color(color, factor) if color == 'auto' else color
 
-    params['color_label'] = adjust(params['color_label'], 0.3)
-    params['color_spine'] = adjust(params['graphcolor'], 0.45)
-    params['color_tick']  = adjust(params['graphcolor'], 0.45)
-    params['color_grid']  = adjust(params['graphcolor'], -0.4)
-    params['color_annot'] = adjust(params['graphcolor'], 0.3)
+    adjust = lambda color, factor: ColorGenerator.adjust_color(params['graphcolor'], factor) if color == 'auto' else color
+
+    params['color_label'] = adjust(params['color_label'], factors['color_label'])
+    params['color_spine'] = adjust(params['color_spine'], factors['color_spine'])
+    params['color_tick']  = adjust(params['color_tick'], factors['color_tick'])
+    params['color_grid']  = adjust(params['color_grid'], factors['color_grid'])
+    params['color_annot'] = adjust(params['color_annot'], factors['color_annot'])
 
 
 def adjust_kwargs(kwargs: Dict[str, Any],
@@ -235,7 +333,9 @@ def save_plot(filepath: str,
 
 def customize_plot_colors(ax: plt.Axes, 
                           axgridx: bool = False,
+                          linestylex: str = '--',
                           axgridy: bool = False,
+                          linestyley: str = '--',
                           color_grid: str = None,
                           color_spine: str = None, 
                           color_tick: str = None) -> None:
@@ -266,6 +366,14 @@ def customize_plot_colors(ax: plt.Axes,
     --------
     None
     """
+
+    if linestylex not in ['-', '--', '-.', ':']:
+        warnings.warn(f"Invalid linestyle x '{linestylex}'. Default linestyle '--' will be used.")
+        linestylex = '--'
+
+    if linestyley not in ['-', '--', '-.', ':']:
+        warnings.warn(f"Invalid linestyle y '{linestyley}'. Default linestyle '--' will be used.")
+        linestyley = '--'
     
     if color_grid is not None and not axgridx and not axgridy:
         warnings.warn("color_grid is provided but axgridx and axgridy are False. "
@@ -278,10 +386,10 @@ def customize_plot_colors(ax: plt.Axes,
     
     if axgridx:
         ax.set_axisbelow(True)
-        ax.grid(True, axis='x', linestyle='--', alpha=0.6, color=color_grid)
+        ax.grid(True, axis='x', linestyle=linestylex, alpha=0.6, color=color_grid)
     if axgridy:
         ax.set_axisbelow(True)
-        ax.grid(True, axis='y', linestyle='--', alpha=0.6, color=color_grid)
+        ax.grid(True, axis='y', linestyle=linestyley, alpha=0.6, color=color_grid)
     if color_spine is not None:
         ax.spines['bottom'].set_color(color_spine)
         ax.spines['left'].set_color(color_spine)
@@ -325,7 +433,9 @@ def add_value_labels(ax: plt.Axes,
     None
     """
     
-    color = [ColorGenerator.adjust_color(p.get_facecolor(), 0.5) for p in ax.patches] if color == 'matching' else [color] * len(ax.patches)
+    color = [ColorGenerator.adjust_color(p.get_facecolor(), 0.5) for p in ax.patches] if \
+            color == 'matching' else \
+            [color] * len(ax.patches)
 
     patch_data = [(p.get_x(), p.get_width(), p.get_height()) for p in ax.patches] if not horizontal else \
                  [(p.get_y(), p.get_height(), p.get_width()) for p in ax.patches]
@@ -350,8 +460,7 @@ def add_value_labels(ax: plt.Axes,
 
 
 def final_graph_customization(ax: plt.Axes, 
-                              params: Dict[str, Any],
-                              kwargs: Dict[str, Any]) -> None:
+                              params: Dict[str, Any]) -> None:
     """
     Customize the final appearance of the plot.
 
@@ -368,6 +477,8 @@ def final_graph_customization(ax: plt.Axes,
     None
     """
     shorten = lambda text, max_length: f"{text[:max_length//2]}...{text[-max_length//2:]}" if len(text) > max_length else text
+
+    adjust_graph_color(params)
 
     if params.get('x_ticks_shorten') is not None:
         max_length = params['x_ticks_shorten'] if (isinstance(params['x_ticks_shorten'], int) or params['x_ticks_shorten'] == 'auto' or params['x_ticks_shorten'] == True) else 18
@@ -387,30 +498,33 @@ def final_graph_customization(ax: plt.Axes,
         ax.yaxis.set_major_locator(plt.MultipleLocator(params['yticks_sep']))
 
     if params.get('add_value_annot'):
-        add_value_labels(ax, params.get('color_annot'), 
+        add_value_labels(ax, 
+                         color=params.get('color_annot'), 
                          fontsize=params.get('annot_fontsize'),
                          frequency=params.get('frequency'), 
                          horizontal=params.get('horizontal'),
-                         percentage=params.get('percentage_annot'),
-                         outside=params.get('outside_annot'))
+                         percentage=params.get('annot_percentage'),
+                         outside=params.get('annot_outside'))
     
     if params.get('customize_plot_colors'):
         customize_plot_colors(ax, 
                               axgridx=params.get('axgridx'), 
+                              linestylex=params.get('linestylex'),
                               axgridy=params.get('axgridy'), 
+                              linestyley=params.get('linestyley'),
                               color_grid=params.get('color_grid'),
                               color_spine=params.get('color_spine'), 
                               color_tick=params.get('color_tick'))
         
     if params.get('set_edgecolor'):
-        for i, patch in enumerate(ax.patches):
+        for patch in ax.patches:
             if params['edgecolor'] == 'auto':
                 color_of_the_patch = patch.get_facecolor()
                 patch.set_edgecolor(ColorGenerator.adjust_color(color_of_the_patch, params['edgefactor']))
     
     plt.title(params['title_before'] + params['title'] + params['title_after'], fontsize=params['title_fontsize'], fontweight='bold')
-    plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight=params['x_label_fontweight'])
-    plt.ylabel(params['y_label_title'], color=params['color_label'], fontsize=params['y_label_fontsize'], fontweight=params['y_label_fontweight'])
+    plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight='bold' if params['x_label_bold'] else 'normal')
+    plt.ylabel(params['y_label_title'], color=params['color_label'], fontsize=params['y_label_fontsize'], fontweight='bold' if params['y_label_bold'] else 'normal')
 
     rotation, ha = params['rotation'] if isinstance(params['rotation'], tuple) else (params['rotation'], 'center')
     plt.xticks(rotation=rotation, ha=ha)
@@ -478,7 +592,7 @@ def plot_missing_data(ax: plt.Axes,
 
     get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
-    adjust_graph_color(params)
+    print(params)
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
@@ -496,7 +610,7 @@ def plot_missing_data(ax: plt.Axes,
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.2f}%' for tick in ticks])
 
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     save_plot(params['filepath'])
 
@@ -564,7 +678,7 @@ def plot_groupby(ax: plt.Axes,
 
     get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
-    adjust_graph_color(params)
+    
 
     params['title'] = f"{result_label.capitalize()} {'Percentage' if params['frequency'] else 'Total'} by {group.capitalize()} Category"
     params['y_label_title'] = f"{result_label.capitalize()} {'Percentage' if params['frequency'] else 'Total'}"
@@ -575,7 +689,7 @@ def plot_groupby(ax: plt.Axes,
                 data=df, palette=kwargs.pop('color'),
                 hue=df.index, legend=False, **kwargs)
 
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
     save_plot(params['filepath'])
 
     return df
@@ -653,7 +767,7 @@ def plot_hist_discrete_feature(ax: plt.Axes,
 
     get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
-    adjust_graph_color(params)
+    
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
@@ -678,7 +792,7 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         ax.yaxis.set_major_locator(FixedLocator(ticks))
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
         
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     if nb_columns != 1:
         labels = df_melted['Type'].unique()
@@ -747,7 +861,7 @@ def plot_boxplot(ax: plt.Axes,
         median_style = {**default_median_style, **kwargs.pop('median_style', {})}
 
     adjust_kwargs(kwargs, params, alpha=False)
-    adjust_graph_color(params)
+    
 
     sns.boxplot(x=x, y=y, data=dataframe, palette=kwargs.pop('color'), 
                 hue=x, medianprops=median_style, flierprops=params['outlier_style'], **kwargs)
@@ -761,7 +875,7 @@ def plot_boxplot(ax: plt.Axes,
             if median_color == 'auto' and i % 6 == 4 and i != 0:
                 line.set_color(ColorGenerator.adjust_color(ax.patches[i//6].get_facecolor(), -0.2))
 
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     save_plot(params['filepath'])
 
@@ -816,7 +930,7 @@ def plot_kde(ax: plt.Axes,
     params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params, alpha=True, fill=True)
-    adjust_graph_color(params)
+    
 
     if isinstance(dataframe, pd.DataFrame):
         dataframe = [dataframe]
@@ -882,7 +996,7 @@ def plot_feature_importance(ax: plt.Axes,
 
     get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
-    adjust_graph_color(params)
+    
 
     sns.barplot(y='Features', x='Importances', 
                 data=df_importance, palette=kwargs.pop('color'), 
@@ -898,7 +1012,7 @@ def plot_feature_importance(ax: plt.Axes,
         y_labels = ax.get_yticklabels()
         y_labels[min_index].set_style('italic')
 
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     save_plot(params['filepath'])
 
@@ -1460,7 +1574,7 @@ def plot_confusion_matrix_heatmap(ax: plt.Axes,
     params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params, False, True, True, True, True, True)
-    adjust_graph_color(params)
+    
 
     
     sns.heatmap(cm, annot=True, fmt='d', 
@@ -1469,7 +1583,7 @@ def plot_confusion_matrix_heatmap(ax: plt.Axes,
                 clip_on = False
                 **kwargs)
     
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     if params['border']:
         print('in')
@@ -1519,11 +1633,11 @@ def plot_correlation_matrix_heatmap(ax: plt.Axes,
     params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params, False, True, True, True, True, True)
-    adjust_graph_color(params)
+    
         
     sns.heatmap(corr, annot=True, fmt='.2f', **kwargs)
 
-    final_graph_customization(ax, params, kwargs)
+    final_graph_customization(ax, params)
 
     if params['border']:
         ax.axhline(y=0, color='k',linewidth=1.8*kwargs['linewidth'])
