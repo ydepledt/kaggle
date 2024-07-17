@@ -1,2 +1,3 @@
 __pycache__/
 flood_pred/catboost_info/
+insurance_cross_selling/*.csv

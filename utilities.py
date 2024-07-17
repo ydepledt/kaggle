@@ -24,9 +24,18 @@ DEFAULT_PARAMETER = {
     'graphcolor': '#000000',
     'rotation': 0,
     'horizontal': False,
-    'startangle': 0,
-    'size_circle_pie': 0.75,
     'linewidth': 0,
+
+    # Pie chart settings
+    'size_circle_pie': 0.75,
+    'startangle': 0,
+    'donnut_style': False,
+    'donnut_size': 0.7,
+    'donnut_style_edgecolor': 'lightgray',
+    'annot_distance': 0.5,
+    'label_distance': 1.1,
+    'explode': None,
+    'shadow': False,
     
     # Title settings
     'title': '',
@@ -61,6 +70,7 @@ DEFAULT_PARAMETER = {
     # Colors settings
     'set_edgecolor': True,
     'customize_plot_colors': True,
+    'edgecolor': 'auto',
     'edgefactor': 0.6,
     'color_label': 'auto',
     'color_spine': 'auto',
@@ -497,7 +507,7 @@ def final_graph_customization(ax: plt.Axes,
     if params.get('yticks_sep') and params['yticks_sep'] != 'auto':
         ax.yaxis.set_major_locator(plt.MultipleLocator(params['yticks_sep']))
 
-    if params.get('add_value_annot'):
+    if params.get('add_value_annot') and not isinstance(ax.patches[0], mpatches.Wedge):
         add_value_labels(ax, 
                          color=params.get('color_annot'), 
                          fontsize=params.get('annot_fontsize'),
@@ -521,6 +531,7 @@ def final_graph_customization(ax: plt.Axes,
             if params['edgecolor'] == 'auto':
                 color_of_the_patch = patch.get_facecolor()
                 patch.set_edgecolor(ColorGenerator.adjust_color(color_of_the_patch, params['edgefactor']))
+                patch.set_linewidth(params['linewidth'])
     
     plt.title(params['title_before'] + params['title'] + params['title_after'], fontsize=params['title_fontsize'], fontweight='bold')
     plt.xlabel(params['x_label_title'], color=params['color_label'], fontsize=params['x_label_fontsize'], fontweight='bold' if params['x_label_bold'] else 'normal')
@@ -528,6 +539,72 @@ def final_graph_customization(ax: plt.Axes,
 
     rotation, ha = params['rotation'] if isinstance(params['rotation'], tuple) else (params['rotation'], 'center')
     plt.xticks(rotation=rotation, ha=ha)
+
+
+def plot_pie_feature(ax: plt.Axes,
+                     dataframe: pd.DataFrame,
+                     column: str,
+                     **kwargs) -> pd.DataFrame:
+    
+    """
+    Plot a pie chart for a specified column in a DataFrame.
+
+    Parameters:
+    -----------
+    ax (plt.Axes):
+        The plot's axes.
+
+    dataframe (pd.DataFrame):
+        The DataFrame containing the data.
+
+    column (str):
+        The name of the column to plot.
+
+    **kwargs:
+        Additional keyword arguments for customization (e.g., colors, explode, shadow, etc.).
+
+    Returns:
+    --------
+    pd.DataFrame:
+        DataFrame containing the unique values, counts, and percentages of the specified column.
+    """
+
+    labels, counts = np.unique(dataframe[column], return_counts=True)
+    percentages = counts / len(dataframe) * 100
+
+    dict_df_count = {'Labels': labels, 'Counts': counts, 'Percentages': percentages}
+    df_counts = pd.DataFrame(dict_df_count)
+
+    get_colors(len(labels), kwargs)
+
+    params = {'title': f'Pie Chart of {column.capitalize()}', 'size_circle_pie': 1.0}
+    params = {**DEFAULT_PARAMETER, **params}
+
+    adjust_kwargs(kwargs, params)
+
+    params['labels'] = kwargs.pop('labels', labels)
+
+    ax.pie(df_counts['Counts'], labels=params['labels'], autopct='%1.1f%%', startangle=params['startangle'],
+           colors=kwargs.pop('color'), explode=params['explode'], shadow=params['shadow'], 
+           radius=params['size_circle_pie'], wedgeprops={'edgecolor': 'black'}, 
+           textprops={'color': 'w', 'fontsize': params['annot_fontsize']},
+           pctdistance=params['annot_distance'], labeldistance=params['label_distance'])  
+    
+    final_graph_customization(ax, params)
+
+    if params['donnut_style']:
+        centre_circle = plt.Circle((0, 0), params['donnut_size'], fc='white', edgecolor=params['donnut_style_edgecolor'], linewidth=params['linewidth'])
+        ax.add_artist(centre_circle)
+
+    patches = [p for p in ax.patches if isinstance(p, mpatches.Wedge) for _ in range(len(labels))]
+
+    for text, patch in zip(ax.texts, patches):
+        color_of_the_patch = patch.get_facecolor()
+        text.set_color(ColorGenerator.adjust_color(color_of_the_patch, params['edgefactor']))
+
+    save_plot(params['filepath'])
+
+    return df_counts
 
 
 
@@ -592,7 +669,6 @@ def plot_missing_data(ax: plt.Axes,
 
     get_edgecolors(0.5, params)
     adjust_kwargs(kwargs, params)
-    print(params)
 
     params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
 
@@ -699,7 +775,7 @@ def plot_groupby(ax: plt.Axes,
 
 def plot_hist_discrete_feature(ax: plt.Axes,
                                dataframe: pd.DataFrame, 
-                               column: Union[str, List[str]],
+                               column: str,
                                **kwargs) -> pd.DataFrame:
     """
     Plot a histogram for a specified column in a DataFrame with customizable options.
@@ -715,13 +791,6 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     column (str):
         The name of the column to plot.
 
-    filepath (str, optional):
-        The file path to save the plot as an image. If provided, the figure will be saved as a PNG file.
-        Defaults to None.
-
-    frequency (bool, optional):
-        If True, plot frequencies instead of counts. Defaults to False.
-
     **kwargs:
         Additional keyword arguments for customization (e.g., alpha, edgecolor, bins, color, etc.).
 
@@ -735,55 +804,28 @@ def plot_hist_discrete_feature(ax: plt.Axes,
     path is provided, the plot will be saved as an image in PNG format.
     """
 
-    dataframe_formated = kwargs.pop('dataframe_formated', False)
+    labels, counts = np.unique(dataframe[column], return_counts=True)
+    percentages = counts / len(dataframe) * 100
 
-    column = [column] if isinstance(column, str) else column
-
-    nb_columns = len(column)
-
-    if not dataframe_formated:
-        labels, counts = np.unique(dataframe[column], return_counts=True)
-        percentages = counts / len(dataframe) * 100
-    else:
-        labels = dataframe[column].index
-        counts = [dataframe[col].values.ravel() for col in column]
-        percentages = [count / len(dataframe) * 100 for count in counts]
-
-    dict_df_count = {**{'Labels': labels}, 
-                     **{f'Counts {col}': count for col, count in zip(column, counts)}, 
-                     **{f'Percentages {col}': percentage for col, percentage in zip(column, percentages)}}
-
+    dict_df_count = {'Labels': labels, 'Counts': counts, 'Percentages': percentages}
     df_counts = pd.DataFrame(dict_df_count)
-
-    df_counts.sort_values(by=f'Counts {column[0]}', ascending=False, inplace=True)
-
-    columns_to_drop = [col for col in df_counts.columns if 'Percentage' in col]
-    df_melted = df_counts.drop(columns=columns_to_drop).melt(id_vars='Labels', var_name='Type', value_name='Counts')
 
     get_colors(len(labels), kwargs)
 
-    params = {'title': f'Distribution of {column[0].capitalize()}', 'x_label_title': column[0].capitalize()}
+    params = {'title': f'Distribution of {column.capitalize()}', 'x_label_title': column.capitalize()}
     params = {**DEFAULT_PARAMETER, **params}
 
-    get_edgecolors(0.5, params)
-    adjust_kwargs(kwargs, params)
-    
+    adjust_kwargs(kwargs, params, 
+                  alpha=True, linewidth=True)
 
-    params['y_label_title'] = params.get('y_label_title', 'Frequency' if params['frequency'] else 'Counts')
-
-    if nb_columns == 1:
-        y_tit = f'Percentage {column[0]}' if params['frequency'] else f'Counts {column[0]}' 
-    else:
-        y_tit = 'Counts'
-    x_lab, y_lab = (y_tit, 'Labels') if not params['horizontal'] else ('Labels', y_tit)
-
-    color = kwargs.pop('color') if nb_columns == 1 else params['color_multibar']
+    x_lab = 'Percentages' if params['frequency'] else 'Counts'
+    y_lab = 'Labels'
 
     sns.barplot(y=x_lab,
                 x=y_lab,
-                data=df_counts if nb_columns == 1 else df_melted,
-                palette=color,
-                hue='Labels' if nb_columns == 1 else 'Type',
+                data=df_counts,
+                palette=kwargs.pop('color'),
+                hue='Labels',
                 legend=False,
                 **kwargs)
 
@@ -793,17 +835,11 @@ def plot_hist_discrete_feature(ax: plt.Axes,
         ax.set_yticklabels([f'{(tick):.1f}%' for tick in ticks])
         
     final_graph_customization(ax, params)
-
-    if nb_columns != 1:
-        labels = df_melted['Type'].unique()
-        handles = [mpatches.Patch(facecolor=params['color_multibar'][i], 
-                        edgecolor=ColorGenerator.adjust_color(params['color_multibar'][i], params['edgefactor']), 
-                        linewidth=1, 
-                        label=labels[i]) for i in range(len(labels))]
-        plt.legend(handles=handles, loc='center right')
     
-
     save_plot(params['filepath'])
+
+
+
 
     return df_counts
 
@@ -926,7 +962,7 @@ def plot_kde(ax: plt.Axes,
     get_colors(max(nb_colors, nb_colors2), kwargs)
 
     params = {'title': f'Kernel Density Estimation (KDE) of {column}' + (' by ' + group_column if group_column else ''),
-              'x_label_title': column.capitalize(), 'y_label_title': 'Density', 'labels': None}
+              'x_label_title': column.capitalize(), 'y_label_title': 'Density', 'labels': None, 'add_value_annot': False}
     params = {**DEFAULT_PARAMETER, **params}
 
     adjust_kwargs(kwargs, params, alpha=True, fill=True)
@@ -948,6 +984,8 @@ def plot_kde(ax: plt.Axes,
                         label=params['labels'][i] if params['labels'] else f'DataFrame {i}', **kwargs)
         plt.legend() if len(dataframe) > 1 else None
 
+
+    final_graph_customization(ax, params)
     
     save_plot(params['filepath'])    
 
@@ -1586,7 +1624,6 @@ def plot_confusion_matrix_heatmap(ax: plt.Axes,
     final_graph_customization(ax, params)
 
     if params['border']:
-        print('in')
         ax.axhline(y=0, color='k',linewidth=1.8*kwargs['linewidth'])
         ax.axhline(y=cm.shape[1], color='k',linewidth=1.8*kwargs['linewidth'])
         ax.axvline(x=0, color='k',linewidth=1.8*kwargs['linewidth'])
